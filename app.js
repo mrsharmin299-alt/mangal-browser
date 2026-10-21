@@ -23,7 +23,28 @@ const authStatus=document.getElementById('authStatus');
 let auth=null, authReady=false;
 
 function toast(msg){const el=document.getElementById('toast');el.textContent=msg;el.style.display='block';clearTimeout(window.toastTimer);window.toastTimer=setTimeout(()=>el.style.display='none',2600)}
-function openSite(url){if(url==='#add'){const name=prompt('ওয়েবসাইটের নাম লিখুন');if(!name)return;const address=prompt('ওয়েবসাইটের URL লিখুন (যেমন https://example.com)');if(!address)return;let fixed=/^https?:\/\//i.test(address)?address:'https://'+address;sites.splice(sites.length-1,0,{name,icon:'globe',url:fixed});hydrateIcons();render();return} if(url.startsWith('#')){toast('এই সুবিধাটি পরবর্তী সংস্করণে যোগ হবে।');return} window.location.href=url}
+function openSite(url){if(url==='#add'){const name=prompt('ওয়েবসাইটের নাম লিখুন');if(!name)return;const address=prompt('ওয়েবসাইটের URL লিখুন (যেমন https://example.com)');if(!address)return;let fixed=/^https?:\/\//i.test(address)?address:'https://'+address;sites.splice(sites.length-1,0,{name,icon:'globe',url:fixed});hydrateIcons();render();return} if(url.startsWith('#')){toast('এই সুবিধাটি পরবর্তী সংস্করণে যোগ হবে।');return} recordTab(url);window.location.href=url}
+// ---- ট্যাব ও বুকমার্ক প্যানেল ----
+let tabsList=[],marks=[];
+try{marks=JSON.parse(localStorage.getItem('mangal-marks')||'[]');tabsList=JSON.parse(localStorage.getItem('mangal-tabs')||'[]')}catch(e){}
+function saveStore(){try{localStorage.setItem('mangal-marks',JSON.stringify(marks));localStorage.setItem('mangal-tabs',JSON.stringify(tabsList))}catch(e){}}
+function recordTab(u){tabsList=tabsList.filter(x=>x!==u);tabsList.unshift(u);tabsList=tabsList.slice(0,30);saveStore()}
+function fixUrl(a){return /^https?:\/\//i.test(a)?a:'https://'+a}
+function closePanel(){const p=document.getElementById('panel');if(p)p.classList.remove('open')}
+function openPanel(kind){let p=document.getElementById('panel');if(!p){p=document.createElement('div');p.id='panel';p.className='panel';document.body.appendChild(p)}p.classList.add('open');renderPanel(kind)}
+function rowHtml(u,i,kind){return `<div class="row"><a href="${escapeHtml(u)}">${escapeHtml(u.replace(/^https?:\/\//,''))}<small>${escapeHtml(u)}</small></a><button data-k="${kind}" data-i="${i}" aria-label="মুছুন">✕</button></div>`}
+function renderPanel(kind){
+  const p=document.getElementById('panel');
+  if(kind==='tabs'){
+    p.innerHTML='<h2>ট্যাব</h2>'+(tabsList.length?tabsList.map((u,i)=>rowHtml(u,i,'tabs')).join(''):'<p class="empty">এখনো কোনো সাইট খোলা হয়নি।<br>হোম থেকে কোনো সাইটে ক্লিক করুন।</p>');
+  }else{
+    p.innerHTML='<h2>বুকমার্ক</h2><div class="add"><input id="bmInput" placeholder="ওয়েবসাইটের URL (যেমন example.com)"><button id="bmAdd">যোগ</button></div>'+(marks.length?marks.map((u,i)=>rowHtml(u,i,'marks')).join(''):'<p class="empty">কোনো বুকমার্ক নেই।</p>');
+    p.querySelector('#bmAdd').onclick=()=>{const v=p.querySelector('#bmInput').value.trim();if(!v)return;marks.unshift(fixUrl(v));saveStore();renderPanel('marks')};
+  }
+  p.querySelectorAll('button[data-k]').forEach(b=>b.onclick=()=>{const i=+b.dataset.i;if(b.dataset.k==='tabs')tabsList.splice(i,1);else marks.splice(i,1);saveStore();renderPanel(kind)});
+  p.querySelectorAll('.row a').forEach(a=>a.onclick=()=>recordTab(a.href));
+}
+// ---- শেষ ----
 function icon(k){return (window.ICONS&&window.ICONS[k])||''}
 function hydrateIcons(root){(root||document).querySelectorAll('[data-icon]').forEach(el=>{if(!el.dataset.done){el.innerHTML=icon(el.dataset.icon);el.dataset.done='1'}})}
 function render(){shortcuts.innerHTML='';sites.forEach(s=>{const b=document.createElement('button');b.className='shortcut';b.innerHTML=`<span class="tile">${icon(s.icon)}</span><span>${escapeHtml(s.name)}</span>`;b.addEventListener('click',()=>openSite(s.url));shortcuts.appendChild(b)});popularGrid.innerHTML='';popular.forEach(s=>{const b=document.createElement('button');b.className='popular-item';b.innerHTML=`<span class="popular-icon">${icon(s.icon)}</span><span>${escapeHtml(s.name)}</span>`;b.addEventListener('click',()=>openSite(s.url));popularGrid.appendChild(b)})}
@@ -39,13 +60,13 @@ try{
     auth.onAuthStateChanged(user=>setAccount(user));
   }
 }catch(err){console.error('Firebase initialization error',err)}
-document.getElementById('searchForm').addEventListener('submit',e=>{e.preventDefault();const q=document.getElementById('searchInput').value.trim();if(!q)return;const url=/^(https?:\/\/|localhost|[\w-]+\.[a-z]{2,})/i.test(q)?(q.startsWith('http')?q:'https://'+q):'https://www.google.com/search?q='+encodeURIComponent(q);window.location.href=url});
+document.getElementById('searchForm').addEventListener('submit',e=>{e.preventDefault();const q=document.getElementById('searchInput').value.trim();if(!q)return;const url=/^(https?:\/\/|localhost|[\w-]+\.[a-z]{2,})/i.test(q)?(q.startsWith('http')?q:'https://'+q):'https://www.google.com/search?q='+encodeURIComponent(q);recordTab(url);window.location.href=url});
 document.getElementById('voiceBtn').addEventListener('click',()=>{const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){toast('এই ডিভাইসে ভয়েস সার্চ সমর্থিত নয়।');return}const r=new SR();r.lang='bn-BD';r.onresult=e=>{document.getElementById('searchInput').value=e.results[0][0].transcript;document.getElementById('searchForm').requestSubmit()};r.onerror=()=>toast('ভয়েস সার্চ চালু করা যায়নি।');r.start()});
 document.getElementById('aiBtn').addEventListener('click',()=>openSite('https://chatgpt.com'));
 document.getElementById('menuBtn').addEventListener('click',()=>toast('মঙ্গল ব্রাউজার মেনু: সেটিংস, Extension Store ও প্রাইভেসি'));
 document.getElementById('showAll').addEventListener('click',()=>toast('আরও জনপ্রিয় সাইট পরবর্তী সংস্করণে যোগ হবে।'));
 document.getElementById('learnMore').addEventListener('click',()=>toast('মঙ্গল ব্রাউজার — দ্রুত, নিরাপদ ও স্মার্ট ব্রাউজিং।'));
-document.querySelectorAll('.bottom-nav button').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.bottom-nav button').forEach(x=>x.classList.remove('active'));b.classList.add('active');const p=b.dataset.page;if(p==='home')window.scrollTo({top:0,behavior:'smooth'});else toast(({tabs:'ট্যাব ম্যানেজার পরবর্তী সংস্করণে আসছে।',bookmarks:'বুকমার্ক সুবিধা পরবর্তী সংস্করণে আসছে।',downloads:'ডাউনলোড ম্যানেজার পরবর্তী সংস্করণে আসছে।',settings:'সেটিংস ও Extension Store পরবর্তী সংস্করণে আসছে।'})[p]||p)}));
+document.querySelectorAll('.bottom-nav button').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.bottom-nav button').forEach(x=>x.classList.remove('active'));b.classList.add('active');const p=b.dataset.page;closePanel();if(p==='tabs'||p==='bookmarks'){openPanel(p);return}if(p==='home')window.scrollTo({top:0,behavior:'smooth'});else toast(({tabs:'ট্যাব ম্যানেজার পরবর্তী সংস্করণে আসছে।',bookmarks:'বুকমার্ক সুবিধা পরবর্তী সংস্করণে আসছে।',downloads:'ডাউনলোড ম্যানেজার পরবর্তী সংস্করণে আসছে।',settings:'সেটিংস ও Extension Store পরবর্তী সংস্করণে আসছে।'})[p]||p)}));
 document.getElementById('accountBtn').addEventListener('click',showAuth);
 document.getElementById('closeAuth').addEventListener('click',hideAuth);
 document.getElementById('continueGuest').addEventListener('click',hideAuth);
@@ -68,5 +89,3 @@ document.getElementById('googleSignIn').addEventListener('click',async()=>{
 });
 document.getElementById('signOutBtn').addEventListener('click',async()=>{if(!auth)return;try{await auth.signOut();setAccount(null);authStatus.textContent='সাইন আউট সম্পন্ন।'}catch(e){authStatus.textContent='সাইন আউট করা যায়নি।'}});
 hydrateIcons();render();
-document.querySelector('.bottom-nav [data-page="tabs"]').addEventListener('click',e=>{if(window.MangalApp){e.stopImmediatePropagation();MangalApp.openTabs()}},true);
-document.getElementById('menuBtn').addEventListener('click',e=>{if(window.MangalApp){e.stopImmediatePropagation();MangalApp.openMenu()}},true);
