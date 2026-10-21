@@ -9,27 +9,7 @@
 <body>
 <div class="app-shell">
   <div class="stage">
-    <svg class="planet-svg" viewBox="0 0 400 400" aria-hidden="true">
-      <defs>
-        <radialGradient id="mars" cx=".62" cy=".16" r=".95">
-          <stop offset="0" stop-color="#ff8a4a"/><stop offset=".22" stop-color="#e2461f"/>
-          <stop offset=".55" stop-color="#9a1d10"/><stop offset=".85" stop-color="#3b0809"/><stop offset="1" stop-color="#14040a"/>
-        </radialGradient>
-        <radialGradient id="rim" cx=".5" cy=".5" r=".5"><stop offset=".9" stop-color="#ff5a2a" stop-opacity="0"/><stop offset=".97" stop-color="#ff6a35" stop-opacity=".85"/><stop offset="1" stop-color="#ff6a35" stop-opacity="0"/></radialGradient>
-        <filter id="terrain" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency=".022 .03" numOctaves="5" seed="7" result="n"/><feColorMatrix in="n" type="matrix" values="0 0 0 0 .22  0 0 0 0 .04  0 0 0 0 .02  0 0 0 1.6 -.55"/></filter>
-        <clipPath id="disc"><circle cx="200" cy="200" r="190"/></clipPath>
-      </defs>
-      <circle cx="200" cy="200" r="198" fill="url(#rim)"/>
-      <circle cx="200" cy="200" r="190" fill="url(#mars)"/>
-      <g clip-path="url(#disc)">
-        <rect width="400" height="400" filter="url(#terrain)" opacity=".75"/>
-        <g fill="#2a0707" fill-opacity=".38" stroke="#ff9a62" stroke-opacity=".28" stroke-width="1.200">
-          <ellipse cx="150" cy="70" rx="26" ry="11"/><ellipse cx="238" cy="58" rx="16" ry="7"/><ellipse cx="98" cy="118" rx="20" ry="9"/>
-          <ellipse cx="300" cy="104" rx="22" ry="9"/><ellipse cx="200" cy="112" rx="14" ry="6"/><ellipse cx="60" cy="170" rx="14" ry="6"/><ellipse cx="330" cy="160" rx="12" ry="5"/>
-        </g>
-        <path d="M0 400V250Q200 150 400 250V400z" fill="#000" opacity=".42"/>
-      </g>
-    </svg>
+    <div class="planet-3d" aria-hidden="true"><div class="tex"></div></div>
     <div class="moon"></div><div class="stars"></div>
     <header class="topbar">
       <div class="brand-mark" data-icon="rocket"></div>
