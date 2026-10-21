@@ -30,6 +30,7 @@ jobs:
           done
           cat > $P/gradle.properties <<'EOF'
           android.useAndroidX=true
+          android.suppressUnsupportedCompileSdk=36
           org.gradle.jvmargs=-Xmx3g
           EOF
           cat > $P/settings.gradle <<'EOF'
@@ -58,7 +59,7 @@ jobs:
           }
           android {
               namespace 'com.mangal.browser'
-              compileSdk 35
+              compileSdk 36
               defaultConfig {
                   applicationId 'com.mangal.browser'
                   minSdk 24
