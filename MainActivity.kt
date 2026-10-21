@@ -8,6 +8,9 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Matrix
+import android.graphics.PorterDuff
+import android.graphics.RenderEffect
+import android.graphics.Shader
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.LayerDrawable
@@ -22,6 +25,7 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowInsets
+import android.view.animation.OvershootInterpolator
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
@@ -863,52 +867,156 @@ class MainActivity : Activity() {
 
     // ================= পপআপ মেনু (⋮ ও লিংক লং-প্রেস) =================
 
+    /** পপআপ: আগে পেছনের পেজের ঝাপসা ছবি নেয়, তারপর কাচের কার্ড দেখায় */
     private fun showPopup(header: String?, sub: String?, items: List<MenuItem>, topRight: Boolean) {
+        captureBlurred { shot -> buildPopup(shot, header, sub, items, topRight) }
+    }
+
+    /** পেজের স্ক্রিনশট ছোট করে নেয় (বড় করলে ঝাপসা দেখায়); ৪০০ms-এ না এলে ছবি ছাড়াই চলে */
+    private fun captureBlurred(done: (Bitmap?) -> Unit) {
+        var fired = false
+        val fire: (Bitmap?) -> Unit = { b -> if (!fired) { fired = true; done(b) } }
+        geckoView.postDelayed({ fire(null) }, 400)
+        try {
+            geckoView.capturePixels().then<Void>({ bmp ->
+                if (bmp == null) {
+                    fire(null)
+                } else {
+                    val sw = maxOf(1, bmp.width / 12)
+                    val sh = maxOf(1, bmp.height / 12)
+                    fire(Bitmap.createScaledBitmap(bmp, sw, sh, true))
+                }
+                null
+            }, { _ ->
+                fire(null)
+                null
+            })
+        } catch (e: Throwable) {
+            fire(null)
+        }
+    }
+
+    private fun glowText(tv: TextView) {
+        tv.setShadowLayer(dpf(6), 0f, dpf(2), Color.argb(190, 255, 41, 69))
+    }
+
+    private fun buildPopup(shot: Bitmap?, header: String?, sub: String?, items: List<MenuItem>, topRight: Boolean) {
         val scrim = FrameLayout(this).apply {
-            setBackgroundColor(Color.argb(0xA0, 0, 0, 0))
+            setBackgroundColor(Color.argb(0x66, 5, 3, 4))
             setOnClickListener { dismissOverlay() }
         }
+
+        // ঝাপসা কাচের ব্যাকগ্রাউন্ড: পেছনের পেজেরই ঝাপসা ছবি
+        if (shot != null) {
+            val loc = IntArray(2)
+            val rloc = IntArray(2)
+            geckoView.getLocationInWindow(loc)
+            root.getLocationInWindow(rloc)
+            val blur = ImageView(this).apply {
+                scaleType = ImageView.ScaleType.FIT_XY
+                setImageBitmap(shot)
+                setColorFilter(Color.argb(120, 12, 4, 8), PorterDuff.Mode.SRC_ATOP)
+                if (Build.VERSION.SDK_INT >= 31) {
+                    setRenderEffect(RenderEffect.createBlurEffect(24f, 24f, Shader.TileMode.CLAMP))
+                }
+            }
+            scrim.addView(blur, FrameLayout.LayoutParams(geckoView.width, geckoView.height).apply {
+                leftMargin = loc[0] - rloc[0]
+                topMargin = loc[1] - rloc[1]
+            })
+        }
+
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = glass(22, alpha = 0x40)
-            setPadding(0, dp(8), 0, dp(8))
+            background = glass(24, Color.WHITE, 0x3A, 0x88)
+            setPadding(dp(6), dp(10), dp(6), dp(10))
             isClickable = true
-            lift(this, 16)
+            lift(this, 18)
         }
+
         if (header != null) {
             card.addView(TextView(this).apply {
-                text = header; textSize = 14f; setTextColor(Color.WHITE); maxLines = 1
+                text = header; textSize = 15f; setTextColor(Color.WHITE); maxLines = 1
                 ellipsize = TextUtils.TruncateAt.END; typeface = Typeface.DEFAULT_BOLD
-                setPadding(dp(20), dp(10), dp(20), 0)
+                setPadding(dp(14), dp(6), dp(14), 0)
+                glowText(this)
             })
             if (sub != null) card.addView(TextView(this).apply {
-                text = sub; textSize = 12f; setTextColor(Color.argb(160, 255, 255, 255)); maxLines = 1
+                text = sub; textSize = 12f; setTextColor(Color.argb(170, 255, 255, 255)); maxLines = 1
                 ellipsize = TextUtils.TruncateAt.END
-                setPadding(dp(20), dp(2), dp(20), dp(8))
+                setPadding(dp(14), dp(2), dp(14), dp(8))
             })
         }
-        items.forEach { it ->
-            card.addView(TextView(this).apply {
-                text = it.label
+
+        items.forEachIndexed { idx, item ->
+            val parts = item.label.split("  ", limit = 2)
+            val glyph = if (parts.size == 2) parts[0] else ""
+            val lbl = if (parts.size == 2) parts[1] else item.label
+            val finalAlpha = if (item.enabled) 1f else .35f
+
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(10), dp(9), dp(16), dp(9))
+                if (item.enabled) setOnClickListener { dismissOverlay(); item.action() }
+                pressable(this)
+            }
+            if (glyph.isNotEmpty()) {
+                row.addView(TextView(this).apply {
+                    text = glyph
+                    textSize = 16f
+                    gravity = Gravity.CENTER
+                    setTextColor(Color.WHITE)
+                    background = glass(18, RED, 0x44, 0x99)
+                    lift(this, 6)
+                }, LinearLayout.LayoutParams(dp(36), dp(36)))
+            }
+            row.addView(TextView(this).apply {
+                text = lbl
                 textSize = 15f
                 setTextColor(Color.WHITE)
-                alpha = if (it.enabled) 1f else .35f
-                setPadding(dp(20), dp(13), dp(24), dp(13))
-                if (it.enabled) setOnClickListener { dismissOverlay(); it.action() }
-            })
-        }
-        val w = minOf(dp(300), (resources.displayMetrics.widthPixels * 0.82f).toInt())
-        val lp = FrameLayout.LayoutParams(w, -2, if (topRight) Gravity.TOP or Gravity.END else Gravity.CENTER)
-        if (topRight) { lp.topMargin = dp(58); lp.marginEnd = dp(10) }
-        scrim.addView(ScrollView(this).apply { addView(card) }, lp)
+                glowText(this)
+            }, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(14) })
+            card.addView(row)
 
-        // 3D খোলার অ্যানিমেশন
+            if (idx < items.size - 1) {
+                card.addView(View(this).apply { setBackgroundColor(Color.argb(0x22, 255, 255, 255)) },
+                    LinearLayout.LayoutParams(-1, dp(1)).apply { setMargins(dp(14), 0, dp(14), 0) })
+            }
+
+            // লেখা 3D-তে ভেসে ওঠে (ওপর থেকে উল্টে নেমে আসে)
+            row.cameraDistance = resources.displayMetrics.density * 9000f
+            row.pivotY = 0f
+            row.alpha = 0f
+            row.rotationX = -55f
+            row.translationY = dpf(18)
+            row.animate().alpha(finalAlpha).rotationX(0f).translationY(0f)
+                .setStartDelay(120L + idx * 45L).setDuration(320)
+                .setInterpolator(OvershootInterpolator(1.2f)).start()
+        }
+
+        val w = minOf(dp(300), (resources.displayMetrics.widthPixels * 0.82f).toInt())
+        val lp = FrameLayout.LayoutParams(
+            w + dp(28), -2,
+            if (topRight) Gravity.TOP or Gravity.END else Gravity.CENTER
+        )
+        if (topRight) { lp.topMargin = dp(46); lp.marginEnd = dp(0) }
+        scrim.addView(ScrollView(this).apply {
+            setPadding(dp(14), dp(14), dp(14), dp(14))
+            clipToPadding = false
+            clipChildren = false
+            addView(card)
+        }, lp)
+
+        // কার্ড 3D-তে খোলে
         card.cameraDistance = resources.displayMetrics.density * 9000f
         card.pivotY = 0f
-        card.rotationX = -20f
-        card.scaleX = .92f
-        card.scaleY = .92f
-        card.animate().rotationX(0f).scaleX(1f).scaleY(1f).setDuration(220).start()
+        card.rotationX = -22f
+        card.scaleX = .9f
+        card.scaleY = .9f
+        card.translationY = dpf(20)
+        card.animate().rotationX(0f).scaleX(1f).scaleY(1f).translationY(0f)
+            .setDuration(260).setInterpolator(OvershootInterpolator(0.9f)).start()
         addOverlay(scrim)
     }
 
@@ -943,15 +1051,15 @@ class MainActivity : Activity() {
         showPopup(
             Uri.parse(link).host ?: "লিংক", display(link),
             listOf(
-                MenuItem("নতুন ট্যাবে খুলুন") { newTab(tab.priv, link, 0, false); toast() },
-                MenuItem("নতুন ট্যাব গ্রুপে খুলুন") {
+                MenuItem("＋  নতুন ট্যাবে খুলুন") { newTab(tab.priv, link, 0, false); toast() },
+                MenuItem("▦  নতুন ট্যাব গ্রুপে খুলুন") {
                     if (tab.group == 0) tab.group = nextGroup++
                     newTab(tab.priv, link, tab.group, false)
                     toast()
                 },
-                MenuItem("ইনকগনিটো ট্যাবে খুলুন") { newTab(true, link, 0, false); toast() },
-                MenuItem("লিংকের ঠিকানা কপি") { copyText(link) },
-                MenuItem("লিংক শেয়ার") { shareText(link) }
+                MenuItem("🕶  ইনকগনিটো ট্যাবে খুলুন") { newTab(true, link, 0, false); toast() },
+                MenuItem("⧉  লিংকের ঠিকানা কপি") { copyText(link) },
+                MenuItem("⇪  লিংক শেয়ার") { shareText(link) }
             ),
             false
         )
