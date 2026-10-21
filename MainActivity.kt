@@ -374,7 +374,7 @@ class MainActivity : Activity() {
         rebuildGroupStrip()
     }
 
-    private fun setProgress(p: Int) {
+    private fun setLoadProgress(p: Int) {
         progress.visibility = if (p in 1..99) View.VISIBLE else View.INVISIBLE
         progress.scaleX = p / 100f
     }
@@ -424,7 +424,7 @@ class MainActivity : Activity() {
 
         s.progressDelegate = object : GeckoSession.ProgressDelegate {
             override fun onProgressChange(session: GeckoSession, progress: Int) {
-                if (tabs.getOrNull(current) === tab) setProgress(progress)
+                if (tabs.getOrNull(current) === tab) setLoadProgress(progress)
             }
         }
 
@@ -436,7 +436,7 @@ class MainActivity : Activity() {
     private fun switchTo(i: Int) {
         current = i
         geckoView.setSession(tabs[i].session)
-        setProgress(0)
+        setLoadProgress(0)
         refreshChrome()
     }
 
