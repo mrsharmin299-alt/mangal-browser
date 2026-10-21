@@ -77,6 +77,22 @@ jobs:
               implementation 'org.mozilla.geckoview:geckoview:[130.0,137.0)'
           }
           EOF
+          if [ -n "$(pick ic_launcher.png)" ] && [ -n "$(pick ic_launcher_foreground.png)" ]; then
+            R=$P/app/src/main/res
+            mkdir -p $R/mipmap-nodpi $R/mipmap-anydpi-v26 $R/values
+            cp "$(pick ic_launcher.png)" $R/mipmap-nodpi/ic_launcher.png
+            cp "$(pick ic_launcher_foreground.png)" $R/mipmap-nodpi/ic_launcher_foreground.png
+            cat > $R/values/ic_launcher_background.xml <<'EOF'
+          <resources><color name="ic_launcher_background">#030102</color></resources>
+          EOF
+            cat > $R/mipmap-anydpi-v26/ic_launcher.xml <<'EOF'
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@color/ic_launcher_background"/>
+              <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
+          </adaptive-icon>
+          EOF
+            sed -i 's|<application|<application android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher"|' $P/app/src/main/AndroidManifest.xml
+          fi
       - name: Build debug APK
         working-directory: proj
         run: gradle --no-daemon assembleDebug
