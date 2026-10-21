@@ -1,18 +1,29 @@
 package com.mangal.browser
 
 import android.app.Activity
+import android.app.AlertDialog
+import android.app.DownloadManager
+import android.content.ContentValues
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.Environment
+import android.os.Handler
+import android.os.Looper
+import android.provider.MediaStore
 import android.text.InputType
+import android.util.Base64
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
+import android.webkit.CookieManager
+import android.webkit.URLUtil
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
@@ -21,6 +32,8 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.PopupMenu
 import android.widget.TextView
+import android.widget.Toast
+import java.io.File
 
 class MainActivity : Activity() {
     private lateinit var webView: WebView
@@ -29,6 +42,10 @@ class MainActivity : Activity() {
     private val homeUrl = "file:///android_asset/web/index.html"
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+
+    private fun toast(msg: String) {
+        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+    }
 
     private fun toolButton(label: String): TextView {
         val t = TextView(this)
@@ -78,6 +95,100 @@ class MainActivity : Activity() {
         menu.show()
     }
 
+    // ---------- Downloads ----------
+
+    private fun enqueueDownload(url: String, name: String) {
+        try {
+            val req = DownloadManager.Request(Uri.parse(url))
+            req.addRequestHeader("User-Agent", webView.settings.userAgentString)
+            val cookie = CookieManager.getInstance().getCookie(url)
+            if (cookie != null) req.addRequestHeader("Cookie", cookie)
+            req.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            req.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name)
+            val dm = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
+            dm.enqueue(req)
+            toast("ডাউনলোড শুরু হয়েছে")
+        } catch (e: Exception) {
+            toast("ডাউনলোড করা যায়নি")
+        }
+    }
+
+    private fun imageExt(s: String): String {
+        val l = s.lowercase()
+        return when {
+            l.contains("png") -> "png"
+            l.contains("webp") -> "webp"
+            l.contains("gif") -> "gif"
+            else -> "jpg"
+        }
+    }
+
+    private fun saveDataUri(src: String) {
+        try {
+            val comma = src.indexOf(',')
+            val meta = src.substring(5, comma)
+            if (!meta.contains("base64")) { toast("ছবি সংরক্ষণ করা যায়নি"); return }
+            val mime = meta.substringBefore(';')
+            val bytes = Base64.decode(src.substring(comma + 1), Base64.DEFAULT)
+            val ext = imageExt(mime)
+            val name = "MangalBrowser_" + System.currentTimeMillis() + "." + ext
+            if (Build.VERSION.SDK_INT >= 29) {
+                val values = ContentValues()
+                values.put(MediaStore.Images.Media.DISPLAY_NAME, name)
+                values.put(MediaStore.Images.Media.MIME_TYPE, "image/" + (if (ext == "jpg") "jpeg" else ext))
+                values.put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/MangalBrowser")
+                val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                if (uri == null) { toast("ছবি সংরক্ষণ করা যায়নি"); return }
+                val out = contentResolver.openOutputStream(uri)
+                if (out == null) { toast("ছবি সংরক্ষণ করা যায়নি"); return }
+                out.use { it.write(bytes) }
+            } else {
+                val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+                dir.mkdirs()
+                File(dir, name).writeBytes(bytes)
+            }
+            toast("ছবি সংরক্ষণ হয়েছে")
+        } catch (e: Exception) {
+            toast("ছবি সংরক্ষণ করা যায়নি")
+        }
+    }
+
+    private fun saveImage(src: String) {
+        if (src.startsWith("data:")) {
+            saveDataUri(src)
+        } else if (src.startsWith("http")) {
+            val name = "MangalBrowser_" + System.currentTimeMillis() + "." + imageExt(src.substringBefore('?'))
+            enqueueDownload(src, name)
+        } else {
+            toast("এই ছবি সংরক্ষণ করা যাবে না")
+        }
+    }
+
+    private fun showImageDialog(src: String) {
+        val items = arrayOf("ছবি সংরক্ষণ করুন", "ছবি নতুন পেজে খুলুন")
+        AlertDialog.Builder(this)
+            .setItems(items) { _, which ->
+                if (which == 0) saveImage(src)
+                else if (src.startsWith("http")) webView.loadUrl(src)
+            }
+            .show()
+    }
+
+    private fun handleLongPress(): Boolean {
+        val r = webView.hitTestResult
+        val type = r.type
+        if (type != WebView.HitTestResult.IMAGE_TYPE &&
+            type != WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE) return false
+        val fallback = r.extra
+        val handler = Handler(Looper.getMainLooper()) { m ->
+            val src = m.data.getString("src") ?: fallback
+            if (src != null) showImageDialog(src)
+            true
+        }
+        webView.requestFocusNodeHref(handler.obtainMessage())
+        return true
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val bg = Color.rgb(8, 5, 7)
@@ -116,6 +227,11 @@ class MainActivity : Activity() {
             override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
                 updateBar(url)
             }
+        }
+        webView.setOnLongClickListener { handleLongPress() }
+        webView.setDownloadListener { url, _, contentDisposition, mimeType, _ ->
+            val name = URLUtil.guessFileName(url, contentDisposition, mimeType)
+            enqueueDownload(url, name)
         }
 
         toolbar = LinearLayout(this)
