@@ -1,0 +1,58 @@
+{
+  "name": "mangal-browser",
+  "version": "1.0.0",
+  "description": "Mangal Browser - Mars themed browser starter",
+  "main": "main.js",
+  "author": {
+    "name": "Mangal Browser",
+    "email": "mangal.browser@example.com"
+  },
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.mangal.browser",
+    "productName": "Mangal Browser",
+    "files": [
+      "main.js",
+      "preload.js"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Network"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ]
+    },
+    "extraResources": [
+      {
+        "from": "../web",
+        "to": "web",
+        "filter": [
+          "**/*",
+          "!firebase-config.example.js"
+        ]
+      }
+    ]
+  }
+}

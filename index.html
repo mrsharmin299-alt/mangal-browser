@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="bn">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#080507">
+<title>মঙ্গল ব্রাউজার</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app-shell">
+  <div class="stage">
+    <svg class="planet-svg" viewBox="0 0 400 400" aria-hidden="true">
+      <defs>
+        <radialGradient id="mars" cx=".62" cy=".16" r=".95">
+          <stop offset="0" stop-color="#ff8a4a"/><stop offset=".22" stop-color="#e2461f"/>
+          <stop offset=".55" stop-color="#9a1d10"/><stop offset=".85" stop-color="#3b0809"/><stop offset="1" stop-color="#14040a"/>
+        </radialGradient>
+        <radialGradient id="rim" cx=".5" cy=".5" r=".5"><stop offset=".9" stop-color="#ff5a2a" stop-opacity="0"/><stop offset=".97" stop-color="#ff6a35" stop-opacity=".85"/><stop offset="1" stop-color="#ff6a35" stop-opacity="0"/></radialGradient>
+        <filter id="terrain" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency=".022 .03" numOctaves="5" seed="7" result="n"/><feColorMatrix in="n" type="matrix" values="0 0 0 0 .22  0 0 0 0 .04  0 0 0 0 .02  0 0 0 1.6 -.55"/></filter>
+        <clipPath id="disc"><circle cx="200" cy="200" r="190"/></clipPath>
+      </defs>
+      <circle cx="200" cy="200" r="198" fill="url(#rim)"/>
+      <circle cx="200" cy="200" r="190" fill="url(#mars)"/>
+      <g clip-path="url(#disc)">
+        <rect width="400" height="400" filter="url(#terrain)" opacity=".75"/>
+        <g fill="#2a0707" fill-opacity=".38" stroke="#ff9a62" stroke-opacity=".28" stroke-width="1.200">
+          <ellipse cx="150" cy="70" rx="26" ry="11"/><ellipse cx="238" cy="58" rx="16" ry="7"/><ellipse cx="98" cy="118" rx="20" ry="9"/>
+          <ellipse cx="300" cy="104" rx="22" ry="9"/><ellipse cx="200" cy="112" rx="14" ry="6"/><ellipse cx="60" cy="170" rx="14" ry="6"/><ellipse cx="330" cy="160" rx="12" ry="5"/>
+        </g>
+        <path d="M0 400V250Q200 150 400 250V400z" fill="#000" opacity=".42"/>
+      </g>
+    </svg>
+    <div class="moon"></div><div class="stars"></div>
+    <header class="topbar">
+      <div class="brand-mark" data-icon="rocket"></div>
+      <div class="brand"><h1><span>মঙ্গল</span> ব্রাউজার</h1><p>দ্রুত <b>•</b> নিরাপদ <b>•</b> স্মার্ট</p></div>
+      <button class="account-button" id="accountBtn" aria-label="Sign in"><i data-icon="user"></i><span>লগইন</span></button>
+      <button class="icon-button crown" aria-label="Premium" title="Premium"><i data-icon="crown"></i></button>
+      <button class="icon-button" id="menuBtn" aria-label="Menu"><i data-icon="menu"></i></button>
+    </header>
+    <div class="hero-copy"><h2>স্বাগতম<br><span>মঙ্গল ব্রাউজারে <i class="mini-rocket" data-icon="rocket"></i></span></h2>
+    <p>অনুসন্ধান করুন, আবিষ্কার করুন, এগিয়ে যান...</p></div>
+  </div>
+
+  <form class="searchbar" id="searchForm">
+    <i class="google-g" data-icon="google"></i>
+    <input id="searchInput" autocomplete="off" placeholder="কোনো কিছু সার্চ করুন বা ওয়েবসাইট লিখুন..." aria-label="Search or enter website">
+    <button type="button" id="voiceBtn" aria-label="Voice search"><i data-icon="mic"></i></button>
+  </form>
+
+  <section class="shortcuts" id="shortcuts"></section>
+
+  <button class="ai-card" id="aiBtn">
+    <div class="robot"><i data-icon="robot"></i><small>AI</small></div><div class="ai-copy"><h3>এআই সহকারী</h3><p>আপনার যে কোনো প্রশ্নের উত্তর<br>চাইলে এখনই জিজ্ঞাসা করুন।</p></div><span class="arrow">→</span>
+  </button>
+
+  <section class="popular">
+    <div class="section-heading"><h3><span class="flame">🔥</span> জনপ্রিয় ওয়েবসাইট</h3><button id="showAll">সব দেখুন →</button></div>
+    <div class="popular-grid" id="popularGrid"></div>
+  </section>
+
+  <section class="promo">
+    <svg class="promo-bg" viewBox="0 0 360 130" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
+      <defs><radialGradient id="pm" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#ff8c52"/><stop offset=".5" stop-color="#c8341a"/><stop offset="1" stop-color="#5a0f0c"/></radialGradient></defs>
+      <circle cx="285" cy="52" r="86" fill="url(#pm)"/>
+      <path d="M0 130V104l30-8 22 7 28-14 24 9 30-6 22 12 40-16 26 12 38-10 36 8 34-8 30 10V130z" fill="#2a0b0b"/>
+      <path d="M0 130V116l40-6 30 8 36-9 30 7 50-8 40 6 46-7 40 5 48-4V130z" fill="#140607"/>
+    </svg>
+    <div class="promo-copy"><h3>মঙ্গল ব্রাউজার</h3><p>ভবিষ্যতের ব্রাউজিং এখন আপনার হাতে</p><button id="learnMore">আরও জানুন →</button></div>
+    <div class="astronaut" data-icon="astronaut"></div>
+  </section>
+  <div class="dots"><i></i><i></i><i></i></div>
+
+  <nav class="bottom-nav">
+    <button class="active" data-page="home"><span data-icon="home"></span>হোম</button>
+    <button data-page="tabs"><span data-icon="tabs"></span>ট্যাব</button>
+    <button data-page="bookmarks"><span data-icon="bookmarks"></span>বুকমার্ক</button>
+    <button data-page="downloads"><span data-icon="downloads"></span>ডাউনলোড</button>
+    <button data-page="settings"><span data-icon="user"></span>সেটিংস</button>
+  </nav>
+</div>
+<div class="toast" id="toast" role="status"></div>
+<div class="modal-backdrop" id="authModal" aria-hidden="true">
+  <section class="auth-modal" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+    <button class="modal-close" id="closeAuth" aria-label="Close">×</button>
+    <div class="auth-logo">🪐</div>
+    <h2 id="authTitle">মঙ্গল ব্রাউজারে স্বাগতম</h2>
+    <p class="auth-subtitle">আপনার Google অ্যাকাউন্ট দিয়ে সাইন ইন করুন</p>
+    <button class="google-signin" id="googleSignIn"><span class="google-letter">G</span> Google দিয়ে চালিয়ে যান</button>
+    <p class="auth-privacy">আপনার Gmail পাসওয়ার্ড মঙ্গল ব্রাউজার কখনো চাইবে না। Google-এর নিরাপদ সাইন-ইন পেজ ব্যবহার করুন।</p>
+    <button class="guest-button" id="continueGuest">এখন নয়, ব্রাউজিং চালিয়ে যান</button>
+    <p class="auth-status" id="authStatus" aria-live="polite"></p>
+    <button class="signout-button" id="signOutBtn" hidden>Sign out</button>
+  </section>
+</div>
+<script src="https://www.gstatic.com/firebasejs/11.6.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/11.6.0/firebase-auth-compat.js"></script>
+<script src="firebase-config.js"></script>
+<script src="icons.js"></script>
+<script src="app.js"></script>
+</body></html>
