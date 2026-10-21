@@ -86,3 +86,16 @@ button,input{font:inherit}button{cursor:pointer;color:inherit}
 .guest-button,.signout-button{width:100%;border:1px solid #66212d;background:#1b0d13;border-radius:12px;padding:12px;color:#ffb4bd}
 .auth-status{min-height:18px;font-size:12px;color:#ff8796;margin:12px 0 0;overflow-wrap:anywhere}
 @media(max-width:380px){.brand h1{font-size:18px}.brand p{font-size:11px}.account-button{padding:6px}.topbar{gap:7px}}
+
+/* ট্যাব ও বুকমার্ক প্যানেল */
+.panel{position:fixed;top:0;bottom:78px;left:50%;transform:translateX(-50%);width:min(100%,560px);z-index:20;background:#050304;overflow:auto;padding:22px 16px;display:none}
+.panel.open{display:block}
+.panel h2{margin:0 0 14px;font-size:22px}
+.panel .row{display:flex;align-items:center;gap:10px;padding:12px 14px;margin-bottom:8px;border:1px solid #3a1b21;border-radius:14px;background:#12080b}
+.panel .row a{flex:1;color:#fff;text-decoration:none;min-width:0}
+.panel .row small{display:block;color:#a79ea6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.panel .row button{border:0;background:transparent;color:#ff4a5a;font-size:18px}
+.panel .add{display:flex;gap:8px;margin-bottom:14px}
+.panel .add input{flex:1;min-width:0;padding:11px 12px;border-radius:12px;border:1px solid #6a2630;background:#12080b;color:#fff}
+.panel .add button{border:0;border-radius:12px;padding:0 16px;background:#e21b32;color:#fff;font-weight:700}
+.panel .empty{color:#a79ea6;text-align:center;margin-top:40px}
