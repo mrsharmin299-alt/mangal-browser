@@ -30,7 +30,6 @@ jobs:
           done
           cat > $P/gradle.properties <<'EOF'
           android.useAndroidX=true
-          android.suppressUnsupportedCompileSdk=36
           org.gradle.jvmargs=-Xmx3g
           EOF
           cat > $P/settings.gradle <<'EOF'
@@ -59,7 +58,7 @@ jobs:
           }
           android {
               namespace 'com.mangal.browser'
-              compileSdk 36
+              compileSdk 35
               defaultConfig {
                   applicationId 'com.mangal.browser'
                   minSdk 24
@@ -75,7 +74,7 @@ jobs:
               kotlinOptions { jvmTarget = '17' }
           }
           dependencies {
-              implementation 'org.mozilla.geckoview:geckoview:+'
+              implementation 'org.mozilla.geckoview:geckoview:[130.0,137.0)'
           }
           EOF
       - name: Build debug APK
