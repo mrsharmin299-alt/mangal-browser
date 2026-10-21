@@ -68,3 +68,4 @@ document.getElementById('googleSignIn').addEventListener('click',async()=>{
 });
 document.getElementById('signOutBtn').addEventListener('click',async()=>{if(!auth)return;try{await auth.signOut();setAccount(null);authStatus.textContent='সাইন আউট সম্পন্ন।'}catch(e){authStatus.textContent='সাইন আউট করা যায়নি।'}});
 hydrateIcons();render();
+document.querySelector('.bottom-nav [data-page="tabs"]').addEventListener('click',e=>{if(window.MangalApp){e.stopImmediatePropagation();MangalApp.openTabs()}},true);
