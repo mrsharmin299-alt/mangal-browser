@@ -89,3 +89,113 @@ document.getElementById('googleSignIn').addEventListener('click',async()=>{
 });
 document.getElementById('signOutBtn').addEventListener('click',async()=>{if(!auth)return;try{await auth.signOut();setAccount(null);authStatus.textContent='সাইন আউট সম্পন্ন।'}catch(e){authStatus.textContent='সাইন আউট করা যায়নি।'}});
 hydrateIcons();render();
+
+// ================= নতুন যোগ করা অংশ: মেনু, সেটিংস, প্রিমিয়াম, ডাউনলোড =================
+(function(){
+const st=document.createElement('style');
+st.textContent=`.mx-btn{display:block;width:100%;text-align:left;background:#1a1114;color:#f3e9e4;border:1px solid #4a2a26;border-radius:12px;padding:13px 14px;margin:0 0 8px;font:inherit;font-size:14px}
+.mx-btn small{display:block;color:#b9a69f;margin-top:2px;font-size:12px}
+.mx-sel,.mx-in{width:100%;box-sizing:border-box;background:#1a1114;color:#f3e9e4;border:1px solid #4a2a26;border-radius:12px;padding:12px;font:inherit;margin:0 0 8px}
+.mx-back{background:none;border:0;color:#ff8c52;font:inherit;padding:6px 0;margin-bottom:6px}
+.mx-note{color:#b9a69f;font-size:12.5px;line-height:1.6;margin:8px 0}`;
+document.head.appendChild(st);
+
+const ENGINES={Google:'https://www.google.com/search?q=',Bing:'https://www.bing.com/search?q=',DuckDuckGo:'https://duckduckgo.com/?q='};
+const get=(k,d)=>{try{const v=JSON.parse(localStorage.getItem(k));return v==null?d:v}catch(e){return d}};
+const set=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
+let downloads=get('mangal-dl',[]);
+
+function panel(title){
+  openPanel('tabs');
+  const p=document.getElementById('panel');
+  p.innerHTML='<button class="mx-back" id="mxBack">← হোম</button><h2>'+title+'</h2><div id="mxBody"></div>';
+  p.querySelector('#mxBack').onclick=()=>{closePanel();setActive('home')};
+  return p.querySelector('#mxBody');
+}
+function setActive(page){
+  document.querySelectorAll('.bottom-nav button').forEach(x=>x.classList.toggle('active',x.dataset.page===page));
+}
+function item(body,title,sub,fn){
+  const b=document.createElement('button');b.className='mx-btn';
+  b.innerHTML=escapeHtml(title)+(sub?'<small>'+escapeHtml(sub)+'</small>':'');
+  b.onclick=fn;body.appendChild(b);return b;
+}
+
+function showMenu(){
+  const b=panel('মেনু');
+  item(b,'বুকমার্ক','',()=>openPanel('marks'));
+  item(b,'ট্যাব (সাম্প্রতিক সাইট)','',()=>openPanel('tabs'));
+  item(b,'ডাউনলোড','',showDownloads);
+  item(b,'সেটিংস','',showSettings);
+  item(b,'Extension Store','পরবর্তী সংস্করণে আসছে',()=>toast('Extension Store পরবর্তী সংস্করণে আসছে।'));
+  item(b,'প্রাইভেসি','আপনার ডেটা শুধু এই ডিভাইসে থাকে',()=>toast('ট্যাব ও বুকমার্ক শুধু আপনার ডিভাইসে সংরক্ষিত হয়।'));
+}
+
+function showSettings(){
+  const b=panel('সেটিংস');
+  const sel=document.createElement('select');sel.className='mx-sel';sel.setAttribute('aria-label','সার্চ ইঞ্জিন');
+  const cur=get('mangal-engine','Google');
+  Object.keys(ENGINES).forEach(n=>{const o=document.createElement('option');o.value=n;o.textContent='সার্চ ইঞ্জিন: '+n;if(n===cur)o.selected=true;sel.appendChild(o)});
+  sel.onchange=()=>{set('mangal-engine',sel.value);toast('সার্চ ইঞ্জিন: '+sel.value)};
+  b.appendChild(sel);
+  item(b,'ইতিহাস মুছুন','সাম্প্রতিক সাইটের তালিকা পরিষ্কার হবে',()=>{if(confirm('ইতিহাস মুছবেন?')){tabsList.length=0;saveStore();toast('ইতিহাস মোছা হয়েছে।')}});
+  item(b,'সব বুকমার্ক মুছুন','',()=>{if(confirm('সব বুকমার্ক মুছবেন?')){marks.length=0;saveStore();toast('বুকমার্ক মোছা হয়েছে।')}});
+  item(b,'Extension Store','পরবর্তী সংস্করণে আসছে',()=>toast('Extension Store পরবর্তী সংস্করণে আসছে।'));
+  const n=document.createElement('p');n.className='mx-note';n.textContent='মঙ্গল ব্রাউজার';b.appendChild(n);
+}
+
+function showPremium(){
+  const b=panel('প্রিমিয়াম');
+  const n=document.createElement('p');n.className='mx-note';
+  n.textContent='প্রিমিয়াম সুবিধা এখনো চালু হয়নি। লগইন করে রাখলে চালু হলে আপনি পাবেন।';
+  b.appendChild(n);
+  item(b,'লগইন করুন','',()=>{closePanel();setActive('home');showAuth()});
+}
+
+function showDownloads(){
+  const b=panel('ডাউনলোড');
+  const inp=document.createElement('input');inp.className='mx-in';inp.placeholder='ফাইল বা ছবির লিংক (https://...)';inp.type='url';
+  b.appendChild(inp);
+  item(b,'ডাউনলোড করুন','',()=>{const v=inp.value.trim();if(!v){toast('আগে একটি লিংক লিখুন।');return}doDownload(fixUrl(v))});
+  if(!downloads.length){const n=document.createElement('p');n.className='mx-note';n.textContent='এখনো কিছু ডাউনলোড হয়নি।';b.appendChild(n)}
+  downloads.forEach(d=>item(b,d.name,d.url,()=>window.open(d.url,'_blank')));
+}
+
+async function doDownload(url){
+  let name='file';
+  try{name=decodeURIComponent(url.split('?')[0].split('/').pop())||'file'}catch(e){}
+  try{
+    toast('ডাউনলোড শুরু হচ্ছে…');
+    const r=await fetch(url);if(!r.ok)throw 0;
+    const blob=await r.blob();
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;
+    document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+    toast('ডাউনলোড হয়েছে: '+name);
+  }catch(e){
+    window.open(url,'_blank');
+    toast('সরাসরি ডাউনলোড সম্ভব হয়নি, লিংক খোলা হলো।');
+  }
+  downloads.unshift({name,url});downloads=downloads.slice(0,30);set('mangal-dl',downloads);
+}
+
+document.addEventListener('click',e=>{
+  const nav=e.target.closest('.bottom-nav button');
+  let fn=null;
+  if(nav&&nav.dataset.page==='settings'){setActive('settings');fn=showSettings}
+  else if(nav&&nav.dataset.page==='downloads'){setActive('downloads');fn=showDownloads}
+  else if(e.target.closest('#menuBtn'))fn=showMenu;
+  else if(e.target.closest('.crown'))fn=showPremium;
+  if(fn){e.stopPropagation();e.preventDefault();fn()}
+},true);
+
+document.addEventListener('submit',e=>{
+  if(e.target.id!=='searchForm')return;
+  e.stopImmediatePropagation();e.preventDefault();
+  const q=document.getElementById('searchInput').value.trim();if(!q)return;
+  const isUrl=/^(https?:\/\/|localhost|[\w-]+\.[a-z]{2,})/i.test(q);
+  const base=ENGINES[get('mangal-engine','Google')]||ENGINES.Google;
+  const url=isUrl?(q.startsWith('http')?q:'https://'+q):base+encodeURIComponent(q);
+  recordTab(url);window.location.href=url;
+},true);
+})();
