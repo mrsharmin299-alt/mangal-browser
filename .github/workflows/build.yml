@@ -6,11 +6,42 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Unzip project
+      - name: Arrange files into Android project
         run: |
-          unzip -q ./*.zip -d src
-          D=$(dirname "$(find src -name settings.gradle | head -1)")
-          echo "PROJ=$D" >> $GITHUB_ENV
+          mkdir -p android/app/src/main/java/com/mangal/browser android/app/src/main/assets/web
+          cp AndroidManifest.xml android/app/src/main/
+          cp MainActivity.kt android/app/src/main/java/com/mangal/browser/
+          cp index.html app.js style.css icons.js firebase-config.js android/app/src/main/assets/web/
+          cat > build.gradle <<'EOT'
+          plugins {
+              id 'com.android.application' version '8.7.3' apply false
+              id 'org.jetbrains.kotlin.android' version '2.0.21' apply false
+          }
+          EOT
+          cat > settings.gradle <<'EOT'
+          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+          dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }
+          rootProject.name = 'MangalBrowser'
+          include ':app'
+          project(':app').projectDir = file('android/app')
+          EOT
+          cat > android/app/build.gradle <<'EOT'
+          plugins {
+              id 'com.android.application'
+              id 'org.jetbrains.kotlin.android'
+          }
+          android {
+              namespace 'com.mangal.browser'
+              compileSdk 35
+              defaultConfig {
+                  applicationId 'com.mangal.browser'
+                  minSdk 24
+                  targetSdk 35
+                  versionCode 1
+                  versionName '1.0.0'
+              }
+          }
+          EOT
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -20,9 +51,8 @@ jobs:
         with:
           gradle-version: '8.9'
       - name: Build APK
-        working-directory: ${{ env.PROJ }}
         run: gradle --no-daemon assembleDebug
       - uses: actions/upload-artifact@v4
         with:
           name: mangal-browser-apk
-          path: ${{ env.PROJ }}/android/app/build/outputs/apk/debug/*.apk
+          path: android/app/build/outputs/apk/debug/*.apk
