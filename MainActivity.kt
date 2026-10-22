@@ -35,6 +35,14 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import android.app.DownloadManager
+import android.content.pm.PackageManager
+import android.os.Environment
+import android.view.WindowInsetsController
+import android.webkit.URLUtil
+import org.json.JSONArray
+import org.json.JSONObject
+import org.mozilla.geckoview.WebResponse
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoSession
@@ -86,6 +94,16 @@ class MainActivity : Activity() {
     private lateinit var tabCount: TextView
     private lateinit var progress: View
     private lateinit var groupStrip: LinearLayout
+    private lateinit var topBarView: View
+    private lateinit var findBar: LinearLayout
+    private lateinit var findField: EditText
+    private lateinit var findCount: TextView
+    private var fullscreen = false
+    private var overlayCancel: (() -> Unit)? = null
+    private var permCallback: GeckoSession.PermissionDelegate.Callback? = null
+    private var filePrompt: GeckoSession.PromptDelegate.FilePrompt? = null
+    private var fileResult: GeckoResult<GeckoSession.PromptDelegate.PromptResponse>? = null
+    private val prefs by lazy { getSharedPreferences("mangal", MODE_PRIVATE) }
 
     private val cur: Tab get() = tabs[current]
 
@@ -232,6 +250,7 @@ class MainActivity : Activity() {
         if (runtime == null) runtime = GeckoRuntime.create(applicationContext)
 
         geckoView = GeckoView(this)
+        geckoView.setAutofillEnabled(true) // সিস্টেমের পাসওয়ার্ড ম্যানেজার/অটোফিল
 
         root = FrameLayout(this).apply {
             background = GradientDrawable().apply {
@@ -257,7 +276,8 @@ class MainActivity : Activity() {
         }
 
         val column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        column.addView(buildTopBar(), LinearLayout.LayoutParams(-1, -2))
+        topBarView = buildTopBar()
+        column.addView(topBarView, LinearLayout.LayoutParams(-1, -2))
 
         progress = View(this).apply {
             setBackgroundColor(RED)
@@ -266,6 +286,8 @@ class MainActivity : Activity() {
             visibility = View.INVISIBLE
         }
         column.addView(progress, LinearLayout.LayoutParams(-1, dp(2)))
+        findBar = buildFindBar()
+        column.addView(findBar, LinearLayout.LayoutParams(-1, dp(52)))
         column.addView(geckoView, LinearLayout.LayoutParams(-1, 0, 1f))
 
         groupStrip = LinearLayout(this).apply {
@@ -292,7 +314,9 @@ class MainActivity : Activity() {
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        if (overlay != null) { dismissOverlay(); return }
+        if (fullscreen) { cur.session.exitFullScreen(); return }
+        if (overlay != null) { val c = overlayCancel; dismissOverlay(); c?.invoke(); return }
+        if (findBar.visibility == View.VISIBLE) { closeFind(); return }
         val t = cur
         if (t.canBack) t.session.goBack()
         else if (tabs.size > 1) closeTab(current)
@@ -397,6 +421,7 @@ class MainActivity : Activity() {
                 hasUserGesture: Boolean
             ) {
                 tab.url = url ?: HOME
+                addHistory(tab)
                 if (tabs.getOrNull(current) === tab) refreshChrome()
             }
 
@@ -410,7 +435,19 @@ class MainActivity : Activity() {
         }
 
         s.contentDelegate = object : GeckoSession.ContentDelegate {
-            override fun onTitleChange(session: GeckoSession, title: String?) { tab.title = title ?: "" }
+            override fun onTitleChange(session: GeckoSession, title: String?) {
+                tab.title = title ?: ""
+                updateHistoryTitle(tab)
+            }
+
+            override fun onFullScreen(session: GeckoSession, fullScreen: Boolean) {
+                if (tabs.getOrNull(current) === tab) setFullscreen(fullScreen)
+            }
+
+            // ফাইল ডাউনলোড
+            override fun onExternalResponse(session: GeckoSession, response: WebResponse) {
+                startDownload(response)
+            }
 
             override fun onContextMenu(
                 session: GeckoSession,
@@ -428,12 +465,109 @@ class MainActivity : Activity() {
             }
         }
 
+        s.permissionDelegate = object : GeckoSession.PermissionDelegate {
+            override fun onAndroidPermissionsRequest(
+                session: GeckoSession,
+                permissions: Array<out String>?,
+                callback: GeckoSession.PermissionDelegate.Callback
+            ) {
+                val need = permissions?.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED } ?: emptyList()
+                if (need.isEmpty()) { callback.grant(); return }
+                permCallback = callback
+                requestPermissions(need.toTypedArray(), 1001)
+            }
+
+            override fun onContentPermissionRequest(
+                session: GeckoSession,
+                perm: GeckoSession.PermissionDelegate.ContentPermission
+            ): GeckoResult<Int>? {
+                val res = GeckoResult<Int>()
+                val host = Uri.parse(perm.uri).host ?: perm.uri
+                val allow = GeckoSession.PermissionDelegate.ContentPermission.VALUE_ALLOW
+                val deny = GeckoSession.PermissionDelegate.ContentPermission.VALUE_DENY
+                when (perm.permission) {
+                    GeckoSession.PermissionDelegate.PERMISSION_GEOLOCATION -> askPermission("লোকেশন", host) { res.complete(if (it) allow else deny) }
+                    GeckoSession.PermissionDelegate.PERMISSION_DESKTOP_NOTIFICATION -> askPermission("নোটিফিকেশন", host) { res.complete(if (it) allow else deny) }
+                    GeckoSession.PermissionDelegate.PERMISSION_AUTOPLAY_AUDIBLE -> res.complete(deny)
+                    else -> res.complete(allow)
+                }
+                return res
+            }
+
+            override fun onMediaPermissionRequest(
+                session: GeckoSession,
+                uri: String,
+                video: Array<out GeckoSession.PermissionDelegate.MediaSource>?,
+                audio: Array<out GeckoSession.PermissionDelegate.MediaSource>?,
+                callback: GeckoSession.PermissionDelegate.MediaCallback
+            ) {
+                val hasV = video != null && video.isNotEmpty()
+                val hasA = audio != null && audio.isNotEmpty()
+                val what = if (hasV && hasA) "ক্যামেরা ও মাইক্রোফোন" else if (hasV) "ক্যামেরা" else "মাইক্রোফোন"
+                askPermission(what, Uri.parse(uri).host ?: uri) { ok ->
+                    if (ok) callback.grant(video?.firstOrNull(), audio?.firstOrNull()) else callback.reject()
+                }
+            }
+        }
+
+        s.promptDelegate = object : GeckoSession.PromptDelegate {
+            // <input type=file> — ফাইল বাছাই
+            override fun onFilePrompt(
+                session: GeckoSession,
+                prompt: GeckoSession.PromptDelegate.FilePrompt
+            ): GeckoResult<GeckoSession.PromptDelegate.PromptResponse>? {
+                val res = GeckoResult<GeckoSession.PromptDelegate.PromptResponse>()
+                filePrompt = prompt
+                fileResult = res
+                val i = Intent(Intent.ACTION_GET_CONTENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "*/*"
+                    putExtra(Intent.EXTRA_ALLOW_MULTIPLE, prompt.type == GeckoSession.PromptDelegate.FilePrompt.Type.MULTIPLE)
+                }
+                try {
+                    startActivityForResult(i, 2001)
+                } catch (e: Exception) {
+                    filePrompt = null; fileResult = null
+                    res.complete(prompt.dismiss())
+                }
+                return res
+            }
+
+            // alert()
+            override fun onAlertPrompt(
+                session: GeckoSession,
+                prompt: GeckoSession.PromptDelegate.AlertPrompt
+            ): GeckoResult<GeckoSession.PromptDelegate.PromptResponse>? {
+                val res = GeckoResult<GeckoSession.PromptDelegate.PromptResponse>()
+                showPopup("পেজ বলছে", prompt.message ?: "",
+                    listOf(MenuItem("✓  ঠিক আছে") { res.complete(prompt.dismiss()) }), false) {
+                    res.complete(prompt.dismiss())
+                }
+                return res
+            }
+
+            // confirm()
+            override fun onButtonPrompt(
+                session: GeckoSession,
+                prompt: GeckoSession.PromptDelegate.ButtonPrompt
+            ): GeckoResult<GeckoSession.PromptDelegate.PromptResponse>? {
+                val res = GeckoResult<GeckoSession.PromptDelegate.PromptResponse>()
+                showPopup("নিশ্চিত করুন", prompt.message ?: "", listOf(
+                    MenuItem("✓  হ্যাঁ") { res.complete(prompt.confirm(GeckoSession.PromptDelegate.ButtonPrompt.Type.POSITIVE)) },
+                    MenuItem("✕  না") { res.complete(prompt.confirm(GeckoSession.PromptDelegate.ButtonPrompt.Type.NEGATIVE)) }
+                ), false) { res.complete(prompt.dismiss()) }
+                return res
+            }
+        }
+
         if (openNow) s.open(runtime!!)
         tabs.add(tab)
         return tab
     }
 
     private fun switchTo(i: Int) {
+        if (findBar.visibility == View.VISIBLE) closeFind()
+        if (fullscreen) setFullscreen(false)
         current = i
         geckoView.setSession(tabs[i].session)
         setLoadProgress(0)
@@ -530,6 +664,7 @@ class MainActivity : Activity() {
         val v = overlay ?: return
         overlay = null
         renderSwitcher = null
+        overlayCancel = null
         hideKeyboard()
         if (animate) v.animate().alpha(0f).setDuration(120).withEndAction { root.removeView(v) }.start()
         else root.removeView(v)
@@ -867,9 +1002,300 @@ class MainActivity : Activity() {
 
     // ================= পপআপ মেনু (⋮ ও লিংক লং-প্রেস) =================
 
+    // ================= বুকমার্ক ও হিস্টরি (SharedPreferences) =================
+
+    private class Entry(val title: String, val url: String)
+
+    private fun loadList(key: String): MutableList<Entry> {
+        val out = mutableListOf<Entry>()
+        try {
+            val a = JSONArray(prefs.getString(key, "[]"))
+            for (i in 0 until a.length()) {
+                val o = a.getJSONObject(i)
+                out.add(Entry(o.optString("t"), o.optString("u")))
+            }
+        } catch (e: Exception) { }
+        return out
+    }
+
+    private fun saveList(key: String, list: List<Entry>) {
+        val a = JSONArray()
+        list.forEach { a.put(JSONObject().put("t", it.title).put("u", it.url)) }
+        prefs.edit().putString(key, a.toString()).apply()
+    }
+
+    private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_SHORT).show()
+
+    private fun isBookmarked(url: String) = loadList("bm").any { it.url == url }
+
+    private fun toggleBookmark(t: Tab) {
+        val l = loadList("bm")
+        val ex = l.indexOfFirst { it.url == t.url }
+        if (ex >= 0) { l.removeAt(ex); toast("বুকমার্ক সরানো হয়েছে") }
+        else { l.add(0, Entry(tabTitle(t), t.url)); toast("বুকমার্ক যোগ হয়েছে") }
+        saveList("bm", l)
+    }
+
+    private fun addHistory(t: Tab) {
+        if (t.priv || isHome(t.url) || t.url.startsWith("about:")) return
+        val l = loadList("hist")
+        if (l.firstOrNull()?.url == t.url) return
+        l.add(0, Entry(t.title.ifBlank { display(t.url) }, t.url))
+        while (l.size > 300) l.removeAt(l.size - 1)
+        saveList("hist", l)
+    }
+
+    private fun updateHistoryTitle(t: Tab) {
+        if (t.priv || isHome(t.url) || t.title.isBlank()) return
+        val l = loadList("hist")
+        if (l.firstOrNull()?.url == t.url) { l[0] = Entry(t.title, t.url); saveList("hist", l) }
+    }
+
+    private fun showLibrary(startHistory: Boolean) {
+        var hist = startHistory
+        val page = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.argb(0xF2, 5, 3, 4))
+            isClickable = true
+            setPadding(dp(12), dp(8), dp(12), 0)
+        }
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val bmPill = TextView(this).apply { text = "★ বুকমার্ক" }
+        val hiPill = TextView(this).apply { text = "🕘 হিস্টরি" }
+        listOf(bmPill, hiPill).forEach {
+            it.textSize = 13f
+            it.gravity = Gravity.CENTER
+            it.setPadding(dp(14), dp(8), dp(14), dp(8))
+        }
+        val clearBtn = glassButton("🗑") { }
+
+        fun render() {
+            for ((v, h) in listOf(bmPill to false, hiPill to true)) {
+                val on = hist == h
+                v.background = if (on) glass(18, RED, 0x66, 0xAA) else null
+                v.setTextColor(if (on) Color.WHITE else Color.argb(150, 255, 255, 255))
+            }
+            clearBtn.visibility = if (hist) View.VISIBLE else View.INVISIBLE
+            list.removeAllViews()
+            val key = if (hist) "hist" else "bm"
+            val items = loadList(key)
+            if (items.isEmpty()) {
+                list.addView(TextView(this).apply {
+                    text = if (hist) "হিস্টরি খালি" else "কোনো বুকমার্ক নেই"
+                    setTextColor(Color.argb(160, 255, 255, 255))
+                    gravity = Gravity.CENTER
+                    setPadding(0, dp(60), 0, 0)
+                })
+                return
+            }
+            items.forEach { e ->
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+                row.addView(
+                    suggestRow(if (hist) "🕘" else "★", e.title.ifBlank { display(e.url) }, display(e.url)) {
+                        dismissOverlay(); cur.session.loadUri(e.url)
+                    }, LinearLayout.LayoutParams(0, -2, 1f)
+                )
+                row.addView(TextView(this).apply {
+                    text = "✕"; textSize = 16f; setTextColor(Color.WHITE)
+                    setPadding(dp(14), dp(8), dp(8), dp(8))
+                    setOnClickListener {
+                        val l = loadList(key)
+                        l.removeAll { x -> x.url == e.url }
+                        saveList(key, l)
+                        render()
+                    }
+                })
+                list.addView(row, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+            }
+        }
+        bmPill.setOnClickListener { hist = false; render() }
+        hiPill.setOnClickListener { hist = true; render() }
+        clearBtn.setOnClickListener { saveList("hist", emptyList()); render() }
+
+        val modeBox = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            background = glass(20, alpha = 0x22)
+            setPadding(dp(3), dp(3), dp(3), dp(3))
+            addView(bmPill)
+            addView(hiPill)
+        }
+        val top = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            clipChildren = false
+            addView(glassButton("←") { dismissOverlay() }, LinearLayout.LayoutParams(dp(42), dp(42)))
+            addView(View(this@MainActivity), LinearLayout.LayoutParams(0, 1, 1f))
+            addView(modeBox)
+            addView(View(this@MainActivity), LinearLayout.LayoutParams(0, 1, 1f))
+            addView(clearBtn, LinearLayout.LayoutParams(dp(42), dp(42)))
+        }
+        page.addView(top, LinearLayout.LayoutParams(-1, -2))
+        page.addView(ScrollView(this).apply { addView(list) },
+            LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(10) })
+        render()
+        addOverlay(page)
+    }
+
+    // ================= পেজে খুঁজুন =================
+
+    private fun buildFindBar(): LinearLayout {
+        findField = EditText(this).apply {
+            hint = "পেজে খুঁজুন"
+            setHintTextColor(Color.argb(150, 255, 255, 255))
+            setTextColor(Color.WHITE)
+            textSize = 14f
+            isSingleLine = true
+            background = null
+            onTextChanged { q -> findIn(q) }
+        }
+        findCount = TextView(this).apply {
+            textSize = 12f
+            setTextColor(Color.argb(180, 255, 255, 255))
+            setPadding(dp(6), 0, dp(6), 0)
+        }
+        fun sym(t: String, f: () -> Unit) = TextView(this).apply {
+            text = t; textSize = 18f; setTextColor(Color.WHITE)
+            setPadding(dp(12), dp(6), dp(12), dp(6))
+            setOnClickListener { f() }
+        }
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14), dp(4), dp(6), dp(4))
+            background = glass(0, alpha = 0x30)
+            visibility = View.GONE
+            addView(findField, LinearLayout.LayoutParams(0, -1, 1f))
+            addView(findCount)
+            addView(sym("▲") { findStep(false) })
+            addView(sym("▼") { findStep(true) })
+            addView(sym("✕") { closeFind() })
+        }
+    }
+
+    private fun findIn(q: String) {
+        val f = cur.session.finder
+        if (q.isEmpty()) { f.clear(); findCount.text = ""; return }
+        f.find(q, 0).then<Void>({ r ->
+            if (r != null) findCount.text = if (r.total > 0) "${r.current}/${r.total}" else "০"
+            null
+        }, { _ -> null })
+    }
+
+    // 0 = সামনে, 1 = পেছনে (FINDER_FIND_BACKWARDS)
+    private fun findStep(forward: Boolean) {
+        cur.session.finder.find(null, if (forward) 0 else 1)
+            .then<Void>({ r ->
+                if (r != null) findCount.text = if (r.total > 0) "${r.current}/${r.total}" else "০"
+                null
+            }, { _ -> null })
+    }
+
+    private fun openFind() {
+        findBar.visibility = View.VISIBLE
+        findField.setText("")
+        findField.requestFocus()
+        (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(findField, 0)
+    }
+
+    private fun closeFind() {
+        try { cur.session.finder.clear() } catch (e: Throwable) { }
+        findBar.visibility = View.GONE
+        findCount.text = ""
+        hideKeyboard()
+    }
+
+    // ================= ডাউনলোড =================
+
+    private fun startDownload(r: WebResponse) {
+        try {
+            val url = r.uri
+            val cd = r.headers.entries.firstOrNull { it.key.equals("content-disposition", true) }?.value
+            val mime = r.headers.entries.firstOrNull { it.key.equals("content-type", true) }?.value?.substringBefore(';')
+            val name = URLUtil.guessFileName(url, cd, mime)
+            val req = DownloadManager.Request(Uri.parse(url))
+                .setTitle(name)
+                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name)
+            (getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(req)
+            toast("ডাউনলোড শুরু: $name")
+        } catch (e: Exception) {
+            toast("ডাউনলোড করা যায়নি")
+        }
+    }
+
+    // ================= পারমিশন, ফাইল বাছাই, ফুলস্ক্রিন =================
+
+    private fun askPermission(what: String, site: String, onAnswer: (Boolean) -> Unit) {
+        showPopup("$what ব্যবহারের অনুমতি?", site, listOf(
+            MenuItem("✓  অনুমতি দিন") { onAnswer(true) },
+            MenuItem("✕  দেবেন না") { onAnswer(false) }
+        ), false) { onAnswer(false) }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 1001) {
+            val cb = permCallback
+            permCallback = null
+            if (grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) cb?.grant()
+            else cb?.reject()
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != 2001) return
+        val p = filePrompt
+        val r = fileResult
+        filePrompt = null
+        fileResult = null
+        if (p == null || r == null) return
+        if (resultCode != RESULT_OK || data == null) { r.complete(p.dismiss()); return }
+        val uris = mutableListOf<Uri>()
+        data.data?.let { uris.add(it) }
+        data.clipData?.let { c -> for (i in 0 until c.itemCount) uris.add(c.getItemAt(i).uri) }
+        val list = uris.distinct()
+        when {
+            list.isEmpty() -> r.complete(p.dismiss())
+            list.size == 1 -> r.complete(p.confirm(this, list[0]))
+            else -> r.complete(p.confirm(this, list.toTypedArray()))
+        }
+    }
+
+    private fun setFullscreen(on: Boolean) {
+        fullscreen = on
+        topBarView.visibility = if (on) View.GONE else View.VISIBLE
+        progress.visibility = View.INVISIBLE
+        if (on) groupStrip.visibility = View.GONE else rebuildGroupStrip()
+        if (Build.VERSION.SDK_INT >= 30) {
+            window.insetsController?.let {
+                if (on) {
+                    it.hide(WindowInsets.Type.systemBars())
+                    it.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                } else {
+                    it.show(WindowInsets.Type.systemBars())
+                }
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility = if (on) (
+                View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                    View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                    View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                ) else View.SYSTEM_UI_FLAG_VISIBLE
+        }
+    }
+
     /** পপআপ: আগে পেছনের পেজের ঝাপসা ছবি নেয়, তারপর কাচের কার্ড দেখায় */
-    private fun showPopup(header: String?, sub: String?, items: List<MenuItem>, topRight: Boolean) {
-        captureBlurred { shot -> buildPopup(shot, header, sub, items, topRight) }
+    private fun showPopup(
+        header: String?, sub: String?, items: List<MenuItem>, topRight: Boolean,
+        onCancel: (() -> Unit)? = null
+    ) {
+        captureBlurred { shot -> buildPopup(shot, header, sub, items, topRight, onCancel) }
     }
 
     /** পেজের স্ক্রিনশট ছোট করে নেয় (বড় করলে ঝাপসা দেখায়); ৪০০ms-এ না এলে ছবি ছাড়াই চলে */
@@ -900,10 +1326,13 @@ class MainActivity : Activity() {
         tv.setShadowLayer(dpf(6), 0f, dpf(2), Color.argb(190, 255, 41, 69))
     }
 
-    private fun buildPopup(shot: Bitmap?, header: String?, sub: String?, items: List<MenuItem>, topRight: Boolean) {
+    private fun buildPopup(
+        shot: Bitmap?, header: String?, sub: String?, items: List<MenuItem>, topRight: Boolean,
+        onCancel: (() -> Unit)?
+    ) {
         val scrim = FrameLayout(this).apply {
             setBackgroundColor(Color.argb(0x66, 5, 3, 4))
-            setOnClickListener { dismissOverlay() }
+            setOnClickListener { val c = overlayCancel; dismissOverlay(); c?.invoke() }
         }
 
         // ঝাপসা কাচের ব্যাকগ্রাউন্ড: পেছনের পেজেরই ঝাপসা ছবি
@@ -1018,17 +1447,23 @@ class MainActivity : Activity() {
         card.animate().rotationX(0f).scaleX(1f).scaleY(1f).translationY(0f)
             .setDuration(260).setInterpolator(OvershootInterpolator(0.9f)).start()
         addOverlay(scrim)
+        overlayCancel = onCancel
     }
 
     private fun showMainMenu() {
         val t = cur
         val real = !isHome(t.url)
+        val bm = real && isBookmarked(t.url)
         showPopup(null, null, listOf(
             MenuItem("←  পেছনে", t.canBack) { t.session.goBack() },
             MenuItem("→  সামনে", t.canFwd) { t.session.goForward() },
             MenuItem("↻  রিফ্রেশ") { t.session.reload() },
             MenuItem("＋  নতুন ট্যাব") { captureThumb { newTab() } },
             MenuItem("🕶  নতুন ইনকগনিটো ট্যাব") { captureThumb { newTab(priv = true) } },
+            MenuItem(if (bm) "★  বুকমার্ক সরান" else "☆  বুকমার্কে যোগ করুন", real) { toggleBookmark(t) },
+            MenuItem("▤  বুকমার্ক তালিকা") { showLibrary(false) },
+            MenuItem("🕘  হিস্টরি") { showLibrary(true) },
+            MenuItem("🔎  পেজে খুঁজুন", real) { openFind() },
             MenuItem("⇪  শেয়ার", real) { shareText(t.url) },
             MenuItem("⧉  লিংক কপি", real) { copyText(t.url) },
             MenuItem(if (t.desktop) "✓  ডেস্কটপ সাইট" else "🖥  ডেস্কটপ সাইট", real) { toggleDesktop() }
