@@ -115,3 +115,12 @@
 @media (prefers-reduced-motion:reduce){
   .tile,.ai-card:after,.promo:after,.modal-backdrop.open .auth-modal{animation:none!important}
 }
+
+/* ===== Chrome-এর মতো AI Mode / Incognito বাটন ===== */
+.chips{display:flex;gap:10px;margin:14px 0 0;position:relative;z-index:3}
+.chip{flex:1;height:44px;border-radius:24px;color:#fff;font:inherit;font-size:14px;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;
+  background:linear-gradient(135deg,rgba(255,255,255,.17),rgba(255,255,255,.05) 55%,rgba(255,60,80,.08));
+  border:1px solid var(--edge);
+  box-shadow:0 8px 18px rgba(0,0,0,.5),0 0 16px var(--glow),inset 0 1px 0 rgba(255,255,255,.4),inset 0 -6px 12px rgba(0,0,0,.25);
+  transition:transform .15s ease}
+.chip:active{transform:translateY(2px) scale(.95) rotateX(12deg)}
