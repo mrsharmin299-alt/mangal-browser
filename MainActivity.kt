@@ -43,6 +43,7 @@ import android.webkit.URLUtil
 import org.json.JSONArray
 import org.json.JSONObject
 import org.mozilla.geckoview.WebResponse
+import org.mozilla.geckoview.AllowOrDeny
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoSession
@@ -423,6 +424,30 @@ class MainActivity : Activity() {
                 tab.url = url ?: HOME
                 addHistory(tab)
                 if (tabs.getOrNull(current) === tab) refreshChrome()
+            }
+
+            // mangal://... কমান্ড (হোম পেজ থেকে নেটিভ ফিচার) এবং বাইরের অ্যাপের লিংক (tel:, mailto:, ...)
+            override fun onLoadRequest(
+                session: GeckoSession,
+                request: GeckoSession.NavigationDelegate.LoadRequest
+            ): GeckoResult<AllowOrDeny>? {
+                val uri = request.uri
+                if (uri.startsWith("mangal://")) {
+                    geckoView.post { handleCommand(uri.removePrefix("mangal://").trimEnd('/')) }
+                    return GeckoResult.fromValue(AllowOrDeny.DENY)
+                }
+                val scheme = Uri.parse(uri).scheme?.lowercase() ?: ""
+                val internal = listOf(
+                    "http", "https", "resource", "about", "file", "data",
+                    "blob", "javascript", "view-source", "moz-extension"
+                )
+                if (scheme.isNotEmpty() && scheme !in internal) {
+                    try {
+                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(uri)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        return GeckoResult.fromValue(AllowOrDeny.DENY)
+                    } catch (e: Exception) { }
+                }
+                return null
             }
 
             // target="_blank" / window.open
@@ -1205,6 +1230,23 @@ class MainActivity : Activity() {
         findBar.visibility = View.GONE
         findCount.text = ""
         hideKeyboard()
+    }
+
+    // ================= হোম পেজ থেকে নেটিভ কমান্ড =================
+
+    private fun handleCommand(cmd: String) {
+        when (cmd) {
+            "tabs" -> { captureThumb { }; showTabSwitcher() }
+            "bookmarks" -> showLibrary(false)
+            "history" -> showLibrary(true)
+            "incognito" -> captureThumb { newTab(priv = true) }
+            "newtab" -> captureThumb { newTab() }
+            "downloads" -> try {
+                startActivity(Intent(DownloadManager.ACTION_VIEW_DOWNLOADS))
+            } catch (e: Exception) {
+                toast("ডাউনলোড তালিকা খোলা যায়নি")
+            }
+        }
     }
 
     // ================= ডাউনলোড =================
