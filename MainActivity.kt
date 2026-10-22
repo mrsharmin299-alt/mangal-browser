@@ -45,7 +45,9 @@ import org.json.JSONObject
 import org.mozilla.geckoview.WebResponse
 import org.mozilla.geckoview.AllowOrDeny
 import org.mozilla.geckoview.GeckoResult
+import org.mozilla.geckoview.ContentBlocking
 import org.mozilla.geckoview.GeckoRuntime
+import org.mozilla.geckoview.GeckoRuntimeSettings
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSessionSettings
 import org.mozilla.geckoview.GeckoView
@@ -75,6 +77,7 @@ class MainActivity : Activity() {
         var thumb: Bitmap? = null
         var group = 0
         var desktop = false
+        var blocked = 0
     }
 
     private class MenuItem(val label: String, val enabled: Boolean = true, val action: () -> Unit)
@@ -96,6 +99,12 @@ class MainActivity : Activity() {
     private lateinit var progress: View
     private lateinit var groupStrip: LinearLayout
     private lateinit var topBarView: View
+    private lateinit var shieldBadge: TextView
+    private var adblock = true
+    private var blockedToday = 0
+    private var blockedTotal = 0
+    private var blockedDay = 0L
+    private var blockedDirty = 0
     private lateinit var findBar: LinearLayout
     private lateinit var findField: EditText
     private lateinit var findCount: TextView
@@ -248,7 +257,21 @@ class MainActivity : Activity() {
         if (Build.VERSION.SDK_INT >= 30) window.setDecorFitsSystemWindows(false)
         window.statusBarColor = BG
         window.navigationBarColor = BG
-        if (runtime == null) runtime = GeckoRuntime.create(applicationContext)
+        if (runtime == null) {
+            val cb = ContentBlocking.Settings.Builder()
+                .antiTracking(
+                    ContentBlocking.AntiTracking.AD or ContentBlocking.AntiTracking.ANALYTIC or
+                        ContentBlocking.AntiTracking.SOCIAL or ContentBlocking.AntiTracking.CRYPTOMINING or
+                        ContentBlocking.AntiTracking.FINGERPRINTING
+                )
+                .build()
+            runtime = GeckoRuntime.create(
+                applicationContext,
+                GeckoRuntimeSettings.Builder().contentBlocking(cb).build()
+            )
+        }
+        adblock = prefs.getBoolean("adblock", true)
+        loadBlocked()
 
         geckoView = GeckoView(this)
         geckoView.setAutofillEnabled(true) // সিস্টেমের পাসওয়ার্ড ম্যানেজার/অটোফিল
@@ -305,7 +328,7 @@ class MainActivity : Activity() {
 
         val first = createTab(true)
         switchTo(tabs.indexOf(first))
-        first.session.loadUri(HOME)
+        first.session.loadUri(homeUrl())
     }
 
     override fun onDestroy() {
@@ -327,7 +350,7 @@ class MainActivity : Activity() {
     // ================= উপরের বার (Chrome-এর মতো) =================
 
     private fun buildTopBar(): View {
-        val home = glassButton("⌂") { cur.session.loadUri(HOME) }
+        val home = glassButton("⌂") { cur.session.loadUri(homeUrl()) }
 
         addressIcon = TextView(this).apply { text = "🔍"; textSize = 14f }
         addressText = TextView(this).apply {
@@ -335,6 +358,15 @@ class MainActivity : Activity() {
             setTextColor(Color.WHITE)
             maxLines = 1
             ellipsize = TextUtils.TruncateAt.END
+        }
+        shieldBadge = TextView(this).apply {
+            textSize = 12f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.WHITE)
+            setPadding(dp(8), dp(3), dp(8), dp(3))
+            background = glass(12, Color.rgb(60, 255, 140), 0x55, 0x99)
+            visibility = View.GONE
+            setOnClickListener { showShieldInfo() }
         }
         addressPill = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -344,6 +376,7 @@ class MainActivity : Activity() {
             lift(this, 5)
             addView(addressIcon)
             addView(addressText, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(8) })
+            addView(shieldBadge, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(6) })
             setOnClickListener { showOmnibox() }
         }
 
@@ -396,6 +429,7 @@ class MainActivity : Activity() {
         addressText.setTextColor(if (home) Color.argb(160, 255, 255, 255) else Color.WHITE)
         addressPill.background = glass(22, if (t.priv) VIOLET else Color.WHITE, 0x24)
         tabCount.text = tabs.size.toString()
+        updateBadge()
         rebuildGroupStrip()
     }
 
@@ -407,7 +441,7 @@ class MainActivity : Activity() {
     // ================= ট্যাব =================
 
     private fun createTab(openNow: Boolean, priv: Boolean = false): Tab {
-        val settings = GeckoSessionSettings.Builder().usePrivateMode(priv).build()
+        val settings = GeckoSessionSettings.Builder().usePrivateMode(priv).useTrackingProtection(adblock).build()
         val s = GeckoSession(settings)
         val tab = Tab(s, priv)
 
@@ -421,7 +455,9 @@ class MainActivity : Activity() {
                 perms: List<GeckoSession.PermissionDelegate.ContentPermission>,
                 hasUserGesture: Boolean
             ) {
-                tab.url = url ?: HOME
+                val newUrl = url ?: HOME
+                if (newUrl != tab.url) tab.blocked = 0
+                tab.url = newUrl
                 addHistory(tab)
                 if (tabs.getOrNull(current) === tab) refreshChrome()
             }
@@ -487,6 +523,14 @@ class MainActivity : Activity() {
         s.progressDelegate = object : GeckoSession.ProgressDelegate {
             override fun onProgressChange(session: GeckoSession, progress: Int) {
                 if (tabs.getOrNull(current) === tab) setLoadProgress(progress)
+            }
+        }
+
+        s.contentBlockingDelegate = object : ContentBlocking.Delegate {
+            override fun onContentBlocked(session: GeckoSession, event: ContentBlocking.BlockEvent) {
+                tab.blocked++
+                countBlocked()
+                if (tabs.getOrNull(current) === tab) updateBadge()
             }
         }
 
@@ -599,15 +643,15 @@ class MainActivity : Activity() {
         refreshChrome()
     }
 
-    private fun newTab(priv: Boolean = false, url: String = HOME, group: Int = 0, activate: Boolean = true) {
+    private fun newTab(priv: Boolean = false, url: String = "", group: Int = 0, activate: Boolean = true) {
         val t = createTab(true, priv)
         t.group = group
-        t.session.loadUri(url)
+        t.session.loadUri(if (url.isEmpty()) homeUrl() else url)
         if (activate) switchTo(tabs.indexOf(t)) else refreshChrome()
     }
 
     private fun closeTab(i: Int) {
-        if (tabs.size == 1) { tabs[0].session.loadUri(HOME); return }
+        if (tabs.size == 1) { tabs[0].session.loadUri(homeUrl()); return }
         val t = tabs.removeAt(i)
         val wasCurrent = i == current
         if (i < current) current--
@@ -667,7 +711,7 @@ class MainActivity : Activity() {
             }
             groupStrip.addView(pill, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(8) })
         }
-        groupStrip.addView(glassButton("＋") { newTab(cur.priv, HOME, g, true) }.apply {
+        groupStrip.addView(glassButton("＋") { newTab(cur.priv, "", g, true) }.apply {
             textSize = 18f
         }, LinearLayout.LayoutParams(dp(36), dp(36)))
         groupStrip.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
@@ -1232,6 +1276,74 @@ class MainActivity : Activity() {
         hideKeyboard()
     }
 
+    // ================= বিজ্ঞাপন ও ট্র্যাকার ব্লক + কাউন্টার =================
+
+    private fun dayIndex() = (System.currentTimeMillis() + java.util.TimeZone.getDefault().rawOffset) / 86400000L
+
+    private fun loadBlocked() {
+        val today = dayIndex()
+        blockedTotal = prefs.getInt("blk_total", 0)
+        val savedDay = prefs.getLong("blk_day", today)
+        blockedToday = if (savedDay == today) prefs.getInt("blk_today", 0) else 0
+        blockedDay = today
+    }
+
+    private fun saveBlocked() {
+        prefs.edit()
+            .putInt("blk_total", blockedTotal)
+            .putInt("blk_today", blockedToday)
+            .putLong("blk_day", blockedDay)
+            .apply()
+        blockedDirty = 0
+    }
+
+    private fun countBlocked() {
+        val d = dayIndex()
+        if (d != blockedDay) { blockedDay = d; blockedToday = 0 }
+        blockedToday++
+        blockedTotal++
+        blockedDirty++
+        if (blockedDirty >= 25) saveBlocked()
+    }
+
+    override fun onPause() {
+        saveBlocked()
+        super.onPause()
+    }
+
+    /** হোম পেজ URL-এর # অংশে সংখ্যা পাঠায়: #b=আজ&t=মোট (bridge.js পড়ে দেখায়) */
+    private fun homeUrl() = "$HOME#b=$blockedToday&t=$blockedTotal"
+
+    private fun bn(n: Int): String =
+        n.toString().map { c -> if (c in '0'..'9') "০১২৩৪৫৬৭৮৯"[c - '0'] else c }.joinToString("")
+
+    private fun updateBadge() {
+        val t = cur
+        if (isHome(t.url) || t.blocked == 0) { shieldBadge.visibility = View.GONE; return }
+        shieldBadge.text = "🛡 ${bn(t.blocked)}"
+        shieldBadge.visibility = View.VISIBLE
+    }
+
+    private fun showShieldInfo() {
+        val t = cur
+        showPopup(
+            "🛡 ট্র্যাকার সুরক্ষা", "এই পেজে ${bn(t.blocked)}টি আটকানো হয়েছে",
+            listOf(
+                MenuItem("📊  আজ ${bn(blockedToday)}টি • মোট ${bn(blockedTotal)}টি") { },
+                MenuItem(if (adblock) "⏸  সুরক্ষা বন্ধ করুন" else "▶  সুরক্ষা চালু করুন") { toggleAdblock() }
+            ),
+            false
+        )
+    }
+
+    private fun toggleAdblock() {
+        adblock = !adblock
+        prefs.edit().putBoolean("adblock", adblock).apply()
+        tabs.forEach { it.session.settings.useTrackingProtection = adblock }
+        cur.session.reload()
+        toast(if (adblock) "বিজ্ঞাপন ব্লক চালু" else "বিজ্ঞাপন ব্লক বন্ধ")
+    }
+
     // ================= হোম পেজ থেকে নেটিভ কমান্ড =================
 
     private fun handleCommand(cmd: String) {
@@ -1506,6 +1618,7 @@ class MainActivity : Activity() {
             MenuItem("▤  বুকমার্ক তালিকা") { showLibrary(false) },
             MenuItem("🕘  হিস্টরি") { showLibrary(true) },
             MenuItem("🔎  পেজে খুঁজুন", real) { openFind() },
+            MenuItem(if (adblock) "🛡  বিজ্ঞাপন ব্লক: চালু" else "🛡  বিজ্ঞাপন ব্লক: বন্ধ") { toggleAdblock() },
             MenuItem("⇪  শেয়ার", real) { shareText(t.url) },
             MenuItem("⧉  লিংক কপি", real) { copyText(t.url) },
             MenuItem(if (t.desktop) "✓  ডেস্কটপ সাইট" else "🖥  ডেস্কটপ সাইট", real) { toggleDesktop() }
