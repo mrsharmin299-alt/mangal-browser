@@ -1910,15 +1910,25 @@ class MainActivity : Activity() {
 
     // ================= এক্সটেনশন (Firefox add-ons, GeckoView) =================
 
-    private class ExtInfo(val name: String, val desc: String, val id: String, val url: String, val icon: String)
+    private class ExtInfo(
+        val name: String, val desc: String, val id: String, val url: String, val icon: String,
+        val cat: String = "", val about: String = ""
+    )
 
+    /** মঙ্গল এক্সটেনশন স্টোর: নতুন এক্সটেনশন যোগ করতে এখানে একটা ExtInfo লাইন বাড়ান */
     private val curatedExtensions = listOf(
         ExtInfo("uBlock Origin", "শক্তিশালী বিজ্ঞাপন ব্লকার", "uBlock0@raymondhill.net",
-            "https://addons.mozilla.org/firefox/downloads/latest/ublock-origin/latest.xpi", "🛡"),
+            "https://addons.mozilla.org/firefox/downloads/latest/ublock-origin/latest.xpi", "🛡",
+            "বিজ্ঞাপন ও নিরাপত্তা",
+            "ওয়েবসাইটের বিজ্ঞাপন, পপআপ ও ট্র্যাকার আটকায়। পেজ দ্রুত লোড হয় এবং ডেটা কম খরচ হয়।"),
         ExtInfo("Dark Reader", "যেকোনো ওয়েবসাইটে ডার্ক মোড", "addon@darkreader.org",
-            "https://addons.mozilla.org/firefox/downloads/latest/darkreader/latest.xpi", "🌙"),
+            "https://addons.mozilla.org/firefox/downloads/latest/darkreader/latest.xpi", "🌙",
+            "চোখের আরাম",
+            "সব ওয়েবসাইটকে ডার্ক থিমে বদলে দেয়। রাতে পড়তে চোখের চাপ কমে, উজ্জ্বলতা ও কনট্রাস্ট নিজের মতো ঠিক করা যায়।"),
         ExtInfo("Privacy Badger", "লুকানো ট্র্যাকার আটকায় (EFF)", "jid1-MnnxcxisBPnSXQ@jetpack",
-            "https://addons.mozilla.org/firefox/downloads/latest/privacy-badger17/latest.xpi", "🦡")
+            "https://addons.mozilla.org/firefox/downloads/latest/privacy-badger17/latest.xpi", "🦡",
+            "গোপনীয়তা",
+            "আপনাকে সাইট থেকে সাইটে অনুসরণ করা অদৃশ্য ট্র্যাকার নিজে শিখে আটকে দেয়। তৈরি করেছে EFF।")
     )
 
     /** ইনস্টলের আগে অনুমতি জিজ্ঞাসা (গ্লাস পপআপ) */
@@ -1956,6 +1966,11 @@ class MainActivity : Activity() {
         })
     }
 
+    private fun openStoreSite(url: String) {
+        dismissOverlay()
+        captureThumb { newTab(false, url) }
+    }
+
     private fun showExtensions() {
         val page = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -1966,48 +1981,114 @@ class MainActivity : Activity() {
         val list = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             clipChildren = false
+            setPadding(0, 0, 0, dp(28))
         }
         val installed = mutableMapOf<String, WebExtension>()
 
+        fun refreshInstalled() {
+            runtime!!.webExtensionController.list().then<Void>({ exts ->
+                installed.clear()
+                exts?.forEach { installed[it.id] = it }
+                null
+            }, { _ -> null })
+        }
+
+        /** নিচের 3D স্টোর বাটন */
+        fun storeButton(icon: String, title: String, sub: String, onClick: () -> Unit): View {
+            val b = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                background = glass(22, Color.WHITE, 0x30, 0x77)
+                setPadding(dp(14), dp(14), dp(14), dp(14))
+                lift(this, 12)
+                pressable(this)
+                setOnClickListener { onClick() }
+            }
+            b.addView(TextView(this).apply {
+                text = icon; textSize = 22f; gravity = Gravity.CENTER
+                background = glass(24, RED, 0x44, 0x99)
+                lift(this, 6)
+            }, LinearLayout.LayoutParams(dp(48), dp(48)))
+            val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+            col.addView(TextView(this).apply {
+                text = title; textSize = 16f; typeface = Typeface.DEFAULT_BOLD; setTextColor(Color.WHITE)
+                glowText(this)
+            })
+            col.addView(TextView(this).apply {
+                text = sub; textSize = 12f; setTextColor(Color.argb(170, 255, 255, 255))
+            })
+            b.addView(col, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(14) })
+            b.addView(TextView(this).apply {
+                text = "›"; textSize = 26f; setTextColor(Color.argb(200, 255, 255, 255))
+            })
+            return b
+        }
+
         fun render() {
             list.removeAllViews()
+
             list.addView(TextView(this).apply {
-                text = "এক্সটেনশন সরাসরি Mozilla-র অফিশিয়াল স্টোর থেকে নামে। ইনস্টলের পর পেজ রিলোড করুন।"
-                textSize = 12f
-                setTextColor(Color.argb(170, 255, 255, 255))
-                setPadding(dp(4), dp(6), dp(4), dp(2))
+                text = "মঙ্গল স্টোরের বাছাই করা এক্সটেনশন"
+                textSize = 13f
+                setTextColor(Color.argb(190, 255, 255, 255))
+                setPadding(dp(4), dp(8), dp(4), dp(0))
             })
+
             curatedExtensions.forEach { info ->
                 val ext = installed[info.id]
                 val card = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    background = glass(26, alpha = 0x2A, strokeAlpha = 0x77)
+                    lift(this, 12)
+                    setPadding(dp(18), dp(18), dp(18), dp(18))
+                }
+
+                val head = LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.CENTER_VERTICAL
-                    background = glass(18, alpha = 0x26)
-                    lift(this, 6)
-                    setPadding(dp(12), dp(12), dp(12), dp(12))
                 }
-                card.addView(TextView(this).apply {
-                    text = info.icon; textSize = 20f; gravity = Gravity.CENTER
-                    background = glass(21, RED, 0x44, 0x99)
-                    lift(this, 5)
-                }, LinearLayout.LayoutParams(dp(42), dp(42)))
-                val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-                col.addView(TextView(this).apply {
-                    text = info.name; textSize = 14f; typeface = Typeface.DEFAULT_BOLD; setTextColor(Color.WHITE)
+                head.addView(TextView(this).apply {
+                    text = info.icon; textSize = 32f; gravity = Gravity.CENTER
+                    background = glass(32, RED, 0x55, 0xAA)
+                    lift(this, 8)
+                }, LinearLayout.LayoutParams(dp(64), dp(64)))
+                val titleCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+                titleCol.addView(TextView(this).apply {
+                    text = info.name; textSize = 20f; typeface = Typeface.DEFAULT_BOLD
+                    setTextColor(Color.WHITE); glowText(this)
                 })
-                col.addView(TextView(this).apply {
-                    text = if (ext != null) "✓ ইনস্টল আছে • ${info.desc}" else info.desc
-                    textSize = 11.5f
-                    setTextColor(Color.argb(175, 255, 255, 255))
+                if (info.cat.isNotEmpty()) titleCol.addView(TextView(this).apply {
+                    text = info.cat; textSize = 12f; setTextColor(Color.argb(180, 255, 140, 150))
+                    setPadding(0, dp(2), 0, 0)
                 })
-                card.addView(col, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(12); marginEnd = dp(8) })
+                head.addView(titleCol, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(14) })
+                card.addView(head)
+
                 card.addView(TextView(this).apply {
-                    text = if (ext != null) "সরান" else "ইনস্টল"
-                    textSize = 12f
-                    typeface = Typeface.DEFAULT_BOLD
+                    text = info.desc; textSize = 15f; typeface = Typeface.DEFAULT_BOLD
                     setTextColor(Color.WHITE)
-                    setPadding(dp(14), dp(8), dp(14), dp(8))
-                    background = if (ext != null) glass(14, alpha = 0x30) else glass(14, RED, 0x66, 0xCC)
+                    setPadding(0, dp(14), 0, 0)
+                })
+                if (info.about.isNotEmpty()) card.addView(TextView(this).apply {
+                    text = info.about; textSize = 13.5f
+                    setTextColor(Color.argb(200, 255, 255, 255))
+                    setLineSpacing(dpf(3), 1f)
+                    setPadding(0, dp(6), 0, 0)
+                })
+                if (ext != null) card.addView(TextView(this).apply {
+                    text = "✓ ইনস্টল করা আছে"; textSize = 12.5f
+                    setTextColor(Color.rgb(109, 255, 176))
+                    setPadding(0, dp(10), 0, 0)
+                })
+
+                card.addView(TextView(this).apply {
+                    text = if (ext != null) "সরান" else "ইনস্টল করুন"
+                    textSize = 16f
+                    typeface = Typeface.DEFAULT_BOLD
+                    gravity = Gravity.CENTER
+                    setTextColor(Color.WHITE)
+                    background = if (ext != null) glass(24, alpha = 0x30) else glass(24, RED, 0x77, 0xDD)
+                    lift(this, 8)
                     pressable(this)
                     setOnClickListener {
                         if (ext != null) {
@@ -2025,9 +2106,36 @@ class MainActivity : Activity() {
                             }
                         }
                     }
-                })
-                list.addView(card, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
+                }, LinearLayout.LayoutParams(-1, dp(50)).apply { topMargin = dp(16) })
+
+                list.addView(card, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(14) })
             }
+
+            // ===== একদম নিচে: অন্যান্য স্টোর =====
+            list.addView(TextView(this).apply {
+                text = "অন্যান্য স্টোর থেকে খুঁজুন"
+                textSize = 13f
+                setTextColor(Color.argb(190, 255, 255, 255))
+                setPadding(dp(4), dp(28), dp(4), dp(0))
+            })
+            list.addView(
+                storeButton("🦊", "Mozilla এক্সটেনশন স্টোর", "অফিশিয়াল Firefox add-ons") {
+                    openStoreSite("https://addons.mozilla.org/android/")
+                },
+                LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) }
+            )
+            list.addView(
+                storeButton("🌐", "Chrome এক্সটেনশন স্টোর", "দেখা যাবে, তবে সরাসরি চলবে না") {
+                    openStoreSite("https://chromewebstore.google.com/category/extensions")
+                },
+                LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) }
+            )
+            list.addView(TextView(this).apply {
+                text = "দ্রষ্টব্য: Chrome-এর এক্সটেনশন এই ব্রাউজারে সরাসরি ইনস্টল হয় না। Firefox-এ থাকা একই এক্সটেনশন Mozilla স্টোর থেকে নিন।"
+                textSize = 11.5f
+                setTextColor(Color.argb(150, 255, 255, 255))
+                setPadding(dp(4), dp(10), dp(4), 0)
+            })
         }
 
         val top = LinearLayout(this).apply {
@@ -2036,7 +2144,7 @@ class MainActivity : Activity() {
             clipChildren = false
             addView(glassButton("←") { dismissOverlay() }, LinearLayout.LayoutParams(dp(42), dp(42)))
             addView(TextView(this@MainActivity).apply {
-                text = "🧩 এক্সটেনশন"; textSize = 18f; typeface = Typeface.DEFAULT_BOLD
+                text = "🧩 মঙ্গল এক্সটেনশন স্টোর"; textSize = 18f; typeface = Typeface.DEFAULT_BOLD
                 setTextColor(Color.WHITE)
                 setShadowLayer(dpf(6), 0f, dpf(2), Color.argb(190, 255, 41, 69))
             }, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(14) })
@@ -2231,119 +2339,4 @@ class MainActivity : Activity() {
                 }, LinearLayout.LayoutParams(dp(36), dp(36)))
             }
             row.addView(TextView(this).apply {
-                text = lbl
-                textSize = 15f
-                setTextColor(Color.WHITE)
-                glowText(this)
-            }, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(14) })
-            card.addView(row)
-
-            if (idx < items.size - 1) {
-                card.addView(View(this).apply { setBackgroundColor(Color.argb(0x22, 255, 255, 255)) },
-                    LinearLayout.LayoutParams(-1, dp(1)).apply { setMargins(dp(14), 0, dp(14), 0) })
-            }
-
-            // লেখা 3D-তে ভেসে ওঠে (ওপর থেকে উল্টে নেমে আসে)
-            row.cameraDistance = resources.displayMetrics.density * 9000f
-            row.pivotY = 0f
-            row.alpha = 0f
-            row.rotationX = -55f
-            row.translationY = dpf(18)
-            row.animate().alpha(finalAlpha).rotationX(0f).translationY(0f)
-                .setStartDelay(120L + idx * 45L).setDuration(320)
-                .setInterpolator(OvershootInterpolator(1.2f)).start()
-        }
-
-        val w = minOf(dp(300), (resources.displayMetrics.widthPixels * 0.82f).toInt())
-        val lp = FrameLayout.LayoutParams(
-            w + dp(28), -2,
-            if (topRight) Gravity.TOP or Gravity.END else Gravity.CENTER
-        )
-        if (topRight) { lp.topMargin = dp(46); lp.marginEnd = dp(0) }
-        scrim.addView(ScrollView(this).apply {
-            setPadding(dp(14), dp(14), dp(14), dp(14))
-            clipToPadding = false
-            clipChildren = false
-            addView(card)
-        }, lp)
-
-        // কার্ড 3D-তে খোলে
-        card.cameraDistance = resources.displayMetrics.density * 9000f
-        card.pivotY = 0f
-        card.rotationX = -22f
-        card.scaleX = .9f
-        card.scaleY = .9f
-        card.translationY = dpf(20)
-        card.animate().rotationX(0f).scaleX(1f).scaleY(1f).translationY(0f)
-            .setDuration(260).setInterpolator(OvershootInterpolator(0.9f)).start()
-        addOverlay(scrim)
-        overlayCancel = onCancel
-    }
-
-    private fun showMainMenu() {
-        val t = cur
-        val real = !isHome(t.url)
-        val bm = real && isBookmarked(t.url)
-        showPopup(null, null, listOf(
-            MenuItem("←  পেছনে", t.canBack) { t.session.goBack() },
-            MenuItem("→  সামনে", t.canFwd) { t.session.goForward() },
-            MenuItem("↻  রিফ্রেশ") { t.session.reload() },
-            MenuItem("＋  নতুন ট্যাব") { captureThumb { newTab() } },
-            MenuItem("🕶  নতুন ইনকগনিটো ট্যাব") { captureThumb { newTab(priv = true) } },
-            MenuItem(if (bm) "★  বুকমার্ক সরান" else "☆  বুকমার্কে যোগ করুন", real) { toggleBookmark(t) },
-            MenuItem("▤  বুকমার্ক তালিকা") { showLibrary(false) },
-            MenuItem("🕘  হিস্টরি") { showLibrary(true) },
-            MenuItem("🔎  পেজে খুঁজুন", real) { openFind() },
-            MenuItem("⬇  ডাউনলোড ম্যানেজার") { showDownloads() },
-            MenuItem("🧩  এক্সটেনশন") { showExtensions() },
-            MenuItem(if (adblock) "🛡  বিজ্ঞাপন ব্লক: চালু" else "🛡  বিজ্ঞাপন ব্লক: বন্ধ") { toggleAdblock() },
-            MenuItem("⇪  শেয়ার", real) { shareText(t.url) },
-            MenuItem("⧉  লিংক কপি", real) { copyText(t.url) },
-            MenuItem(if (t.desktop) "✓  ডেস্কটপ সাইট" else "🖥  ডেস্কটপ সাইট", real) { toggleDesktop() }
-        ), true)
-    }
-
-    private fun toggleDesktop() {
-        val t = cur
-        t.desktop = !t.desktop
-        t.session.settings.userAgentMode =
-            if (t.desktop) GeckoSessionSettings.USER_AGENT_MODE_DESKTOP else GeckoSessionSettings.USER_AGENT_MODE_MOBILE
-        t.session.settings.viewportMode =
-            if (t.desktop) GeckoSessionSettings.VIEWPORT_MODE_DESKTOP else GeckoSessionSettings.VIEWPORT_MODE_MOBILE
-        t.session.reload()
-    }
-
-    private fun showLinkMenu(tab: Tab, el: GeckoSession.ContentDelegate.ContextElement) {
-        val kind = when (el.type) {
-            GeckoSession.ContentDelegate.ContextElement.TYPE_IMAGE -> "image"
-            GeckoSession.ContentDelegate.ContextElement.TYPE_VIDEO -> "video"
-            GeckoSession.ContentDelegate.ContextElement.TYPE_AUDIO -> "audio"
-            else -> ""
-        }
-        val media = if (kind.isNotEmpty()) el.srcUri else null
-        val link = el.linkUri
-        val main = link ?: media ?: return
-        val opened = { Toast.makeText(this, "ট্যাব খোলা হয়েছে", Toast.LENGTH_SHORT).show() }
-
-        val items = mutableListOf<MenuItem>()
-        if (link != null) {
-            items.add(MenuItem("＋  নতুন ট্যাবে খুলুন") { newTab(tab.priv, link, 0, false); opened() })
-            items.add(MenuItem("▦  নতুন ট্যাব গ্রুপে খুলুন") {
-                if (tab.group == 0) tab.group = nextGroup++
-                newTab(tab.priv, link, tab.group, false)
-                opened()
-            })
-            items.add(MenuItem("🕶  ইনকগনিটো ট্যাবে খুলুন") { newTab(true, link, 0, false); opened() })
-        }
-        if (media != null) {
-            val label = when (kind) { "image" -> "ছবি"; "video" -> "ভিডিও"; else -> "অডিও" }
-            items.add(MenuItem("⬇  $label ডাউনলোড") { downloadUrl(media, kind, tab.url) })
-            if (kind == "image") items.add(MenuItem("🖼  ছবি নতুন ট্যাবে খুলুন") { newTab(tab.priv, media, 0, false); opened() })
-        }
-        if (link != null) items.add(MenuItem("⬇  লিংক ডাউনলোড") { downloadUrl(link, "", tab.url) })
-        items.add(MenuItem("⧉  ঠিকানা কপি") { copyText(main) })
-        items.add(MenuItem("⇪  শেয়ার") { shareText(main) })
-
-        showPopup(Uri.parse(main).host ?: "লিংক", display(main), items, false)
-    }
-}
+  
