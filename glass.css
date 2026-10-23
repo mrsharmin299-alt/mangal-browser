@@ -136,3 +136,6 @@
   box-shadow:0 6px 12px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.5)}
 .sh-tx b{font-size:22px;color:#6dffb0;text-shadow:0 0 12px rgba(60,255,140,.7)}
 .sh-tx small{display:block;color:rgba(255,255,255,.62);font-size:11.5px}
+
+/* নিচের বার এখন নেটিভ (সব সাইটে থাকে), তাই হোম পেজের পুরোনো HTML নেভ লুকানো */
+.bottom-nav{display:none!important}
