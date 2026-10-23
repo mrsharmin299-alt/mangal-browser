@@ -5,7 +5,150 @@
 <meta name="theme-color" content="#080507">
 <title>মঙ্গল ব্রাউজার</title>
 <link rel="stylesheet" href="style.css">
-<link rel="stylesheet" href="glass.css">
+<style>
+/* Mangal Browser — গ্লাস 3D থিম
+   style.css-এর ঠিক পরে লিঙ্ক করুন: <link rel="stylesheet" href="glass.css"> */
+
+:root{--edge:rgba(255,255,255,.24);--glow:rgba(255,41,69,.30)}
+
+.app-shell{perspective:1200px;background:radial-gradient(ellipse at 50% -8%,#3d0b12 0,#0b0507 52%,#050304 100%)}
+
+/* ===== কাচের সারফেস (ঝাপসা ব্যাকগ্রাউন্ড) ===== */
+.searchbar,.ai-card,.popular,.promo,.toast,.auth-modal,.panel .row{
+  background:linear-gradient(135deg,rgba(255,255,255,.17),rgba(255,255,255,.05) 55%,rgba(255,60,80,.08));
+  -webkit-backdrop-filter:blur(16px) saturate(160%);
+  backdrop-filter:blur(16px) saturate(160%);
+  border:1px solid var(--edge);
+  box-shadow:0 12px 30px rgba(0,0,0,.55),0 0 24px var(--glow),
+             inset 0 1px 0 rgba(255,255,255,.38),inset 0 -10px 20px rgba(0,0,0,.25);
+}
+
+/* ছোট আইটেম: ব্লার ছাড়া (পারফরম্যান্সের জন্য), তবে ফোলা 3D বেভেল */
+.tile,.popular-item,.account-button{
+  background:linear-gradient(150deg,rgba(255,255,255,.20),rgba(255,255,255,.05) 60%,rgba(255,41,69,.10));
+  border:1px solid var(--edge);
+  box-shadow:0 8px 16px rgba(0,0,0,.55),0 0 14px rgba(255,41,69,.18),
+             inset 0 1px 0 rgba(255,255,255,.45),inset 0 -6px 10px rgba(0,0,0,.3);
+}
+
+.promo{
+  background:linear-gradient(110deg,rgba(30,6,8,.62),rgba(138,36,18,.55));
+}
+
+/* ===== হিরো লেখা: এক্সট্রুড 3D ===== */
+.hero-copy h2{
+  text-shadow:0 1px 0 #8a1220,0 2px 0 #6d0e19,0 3px 0 #500a13,0 4px 0 #38070e,
+              0 10px 18px rgba(0,0,0,.75),0 0 26px rgba(255,74,46,.45);
+  transform:perspective(700px) rotateX(10deg);
+  transform-origin:50% 100%;
+}
+.hero-copy p{text-shadow:0 2px 8px #000,0 0 14px rgba(255,41,69,.35)}
+.brand h1{text-shadow:0 2px 0 #5d0a14,0 6px 14px rgba(0,0,0,.7)}
+.ai-copy h3,.popular h3,.promo h3,.section-heading h3{text-shadow:0 2px 6px rgba(0,0,0,.7),0 0 12px rgba(255,41,69,.3)}
+
+/* ===== সার্চ বার ===== */
+.searchbar{
+  border:1px solid rgba(255,100,120,.65);
+  box-shadow:0 10px 28px rgba(0,0,0,.6),0 0 22px rgba(255,41,69,.45),
+             inset 0 1px 0 rgba(255,255,255,.45),inset 0 -6px 14px rgba(0,0,0,.3);
+  transition:transform .2s ease,box-shadow .2s ease;
+}
+.searchbar:focus-within{
+  transform:translateY(-2px) rotateX(4deg);
+  box-shadow:0 16px 34px rgba(0,0,0,.65),0 0 30px rgba(255,41,69,.7),
+             inset 0 1px 0 rgba(255,255,255,.5),inset 0 -6px 14px rgba(0,0,0,.3);
+}
+
+/* ===== শর্টকাট টাইল: ভাসে + চাপলে 3D টিল্ট ===== */
+.shortcut{perspective:500px}
+.tile,.popular-item{transition:transform .18s ease,box-shadow .18s ease;transform-style:preserve-3d}
+@keyframes floaty{0%,100%{transform:translateY(0) rotateX(0)}50%{transform:translateY(-3px) rotateX(5deg)}}
+.shortcut:nth-child(odd) .tile{animation:floaty 4.5s ease-in-out infinite}
+.shortcut:nth-child(even) .tile{animation:floaty 4.5s ease-in-out -2.2s infinite}
+.shortcut:active .tile,.popular-item:active{
+  animation:none;
+  transform:translateY(3px) scale(.93) rotateX(14deg);
+  box-shadow:0 3px 8px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.3);
+}
+
+/* ===== AI কার্ড ও প্রোমো: কাচের ওপর আলোর ঝলক ===== */
+.ai-card,.promo{position:relative;overflow:hidden}
+.ai-card:after,.promo:after{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(115deg,transparent 38%,rgba(255,255,255,.16) 50%,transparent 62%);
+  transform:translateX(-130%);
+  animation:sheen 7s ease-in-out infinite;
+}
+@keyframes sheen{0%,55%{transform:translateX(-130%)}100%{transform:translateX(130%)}}
+.arrow{box-shadow:0 6px 14px rgba(0,0,0,.55),0 0 14px rgba(255,29,53,.5),inset 0 1px 0 rgba(255,255,255,.45)}
+.arrow:active{transform:translateY(2px) scale(.94)}
+
+/* ===== নিচের নেভ ===== */
+.bottom-nav{
+  background:linear-gradient(180deg,rgba(255,255,255,.10),rgba(20,8,12,.72));
+  -webkit-backdrop-filter:blur(20px) saturate(160%);
+  backdrop-filter:blur(20px) saturate(160%);
+  border-top:1px solid var(--edge);
+  box-shadow:0 -8px 24px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.3);
+}
+.bottom-nav button{transition:transform .15s ease}
+.bottom-nav button:active{transform:translateY(2px) scale(.92)}
+.bottom-nav .active svg{filter:drop-shadow(0 0 8px #ff2c4b) drop-shadow(0 4px 4px rgba(0,0,0,.6))}
+
+/* ===== লগইন মডাল: 3D-তে ভেসে ওঠে ===== */
+.modal-backdrop{
+  -webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);
+  background:rgba(5,2,4,.62);
+}
+.modal-backdrop.open .auth-modal{animation:glassIn .38s cubic-bezier(.2,.9,.3,1.25) both}
+@keyframes glassIn{
+  from{opacity:0;transform:perspective(800px) rotateX(-28deg) translateY(34px) scale(.9)}
+  to{opacity:1;transform:perspective(800px) rotateX(0) translateY(0) scale(1)}
+}
+.auth-modal h2{text-shadow:0 2px 0 #5d0a14,0 6px 14px rgba(0,0,0,.6)}
+.google-signin{box-shadow:0 8px 18px rgba(0,0,0,.45),inset 0 1px 0 #fff}
+.guest-button,.signout-button{
+  background:linear-gradient(150deg,rgba(255,255,255,.14),rgba(255,255,255,.04));
+  border-color:var(--edge);
+}
+
+/* ===== ট্যাব/বুকমার্ক প্যানেল ===== */
+.panel{
+  background:rgba(5,3,4,.78);
+  -webkit-backdrop-filter:blur(22px);backdrop-filter:blur(22px);
+}
+.panel .add input{background:rgba(255,255,255,.08);border-color:var(--edge)}
+.panel .add button{box-shadow:0 6px 14px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.4)}
+
+@media (prefers-reduced-motion:reduce){
+  .tile,.ai-card:after,.promo:after,.modal-backdrop.open .auth-modal{animation:none!important}
+}
+
+/* ===== Chrome-এর মতো AI Mode / Incognito বাটন ===== */
+.chips{display:flex;gap:10px;margin:14px 0 0;position:relative;z-index:3}
+.chip{flex:1;height:44px;border-radius:24px;color:#fff;font:inherit;font-size:14px;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;
+  background:linear-gradient(135deg,rgba(255,255,255,.17),rgba(255,255,255,.05) 55%,rgba(255,60,80,.08));
+  border:1px solid var(--edge);
+  box-shadow:0 8px 18px rgba(0,0,0,.5),0 0 16px var(--glow),inset 0 1px 0 rgba(255,255,255,.4),inset 0 -6px 12px rgba(0,0,0,.25);
+  transition:transform .15s ease}
+.chip:active{transform:translateY(2px) scale(.95) rotateX(12deg)}
+
+/* ===== 🛡 ব্লক কাউন্টার কার্ড ===== */
+.shield-card{position:relative;z-index:3;display:flex;gap:12px;align-items:center;margin:14px 0 0;padding:12px 14px;border-radius:18px;font-size:13px;line-height:1.5;
+  background:linear-gradient(135deg,rgba(255,255,255,.17),rgba(255,255,255,.05) 55%,rgba(60,255,140,.10));
+  border:1px solid var(--edge);
+  box-shadow:0 10px 24px rgba(0,0,0,.5),0 0 18px rgba(60,255,140,.18),inset 0 1px 0 rgba(255,255,255,.38),inset 0 -8px 16px rgba(0,0,0,.25);
+  -webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px)}
+.sh-ic{flex:none;width:42px;height:42px;border-radius:50%;display:grid;place-items:center;font-size:20px;
+  background:linear-gradient(135deg,rgba(60,255,140,.45),rgba(60,255,140,.10));border:1px solid rgba(255,255,255,.4);
+  box-shadow:0 6px 12px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.5)}
+.sh-tx b{font-size:22px;color:#6dffb0;text-shadow:0 0 12px rgba(60,255,140,.7)}
+.sh-tx small{display:block;color:rgba(255,255,255,.62);font-size:11.5px}
+
+/* নিচের বার এখন নেটিভ (সব সাইটে থাকে), তাই হোম পেজের পুরোনো HTML নেভ লুকানো */
+.bottom-nav{display:none!important}
+
+</style>
 </head>
 <body>
 <div class="app-shell">
@@ -84,6 +227,228 @@
 <script src="firebase-config.js"></script>
 <script src="icons.js"></script>
 <script src="app.js"></script>
-<script src="mars3d.js" defer></script>
-<script src="bridge.js" defer></script>
+<script>
+(function () {
+  var stage = document.querySelector('.stage');
+  if (!stage) return;
+
+  var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // ---------- স্টাইল ----------
+  var css = [
+    '.stage{perspective:900px;transform-style:preserve-3d}',
+    '.m3-l{position:absolute;inset:-24px;pointer-events:none;will-change:transform;filter:hue-rotate(var(--m3-hue,0deg))}',
+    '.m3-l i{position:absolute;border-radius:50%;background:#ffd9c2;opacity:var(--o,.5);animation:m3tw var(--d,4s) ease-in-out infinite}',
+    '@keyframes m3tw{0%,100%{opacity:var(--o,.5)}50%{opacity:.08}}',
+    '.planet-3d{will-change:transform;transform-style:preserve-3d;box-shadow:0 0 30px 4px rgba(var(--m3-glow,255,74,31),.4),0 0 90px 10px rgba(var(--m3-glow,255,74,31),.2)}',
+    '.planet-3d .tex{filter:hue-rotate(var(--m3-hue,0deg))}',
+    /* আলোর দিক ফোনের কাতের সাথে সরে */
+    '.planet-3d:before{background:radial-gradient(circle at var(--lx,66%) var(--ly,22%),#ffffff33 0,#ffffff00 22%),radial-gradient(circle at var(--lx,66%) var(--ly,22%),#0000 0,#0000 38%,#1a040866 62%,#0a0204dd 82%,#050102 100%)}',
+    '.moon{will-change:transform;z-index:1;filter:hue-rotate(var(--m3-hue,0deg))}',
+    '.stars{will-change:transform}',
+    '.hero-copy{will-change:transform}',
+    '.m3-theme{position:absolute;right:12px;bottom:46px;z-index:6;width:38px;height:38px;border-radius:50%;display:grid;place-items:center;font-size:17px;color:#fff;cursor:pointer;padding:0;',
+    'background:linear-gradient(135deg,rgba(255,255,255,.2),rgba(255,255,255,.05));border:1px solid rgba(255,255,255,.28);',
+    'box-shadow:0 8px 18px rgba(0,0,0,.5),0 0 14px rgba(var(--m3-glow,255,74,31),.35),inset 0 1px 0 rgba(255,255,255,.4);',
+    '-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);transition:transform .15s}',
+    '.m3-theme:active{transform:scale(.9) rotateX(12deg)}',
+    '.m3-name{position:absolute;right:58px;bottom:54px;z-index:6;font-size:12px;color:#fff;padding:5px 12px;border-radius:14px;',
+    'background:rgba(0,0,0,.45);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);opacity:0;transition:opacity .3s;pointer-events:none}',
+    '.m3-name.on{opacity:1}',
+    '@media(prefers-reduced-motion:reduce){.m3-l i{animation:none}}'
+  ].join('');
+  var st = document.createElement('style');
+  st.textContent = css;
+  document.head.appendChild(st);
+
+  // ---------- উপাদান নিশ্চিত করা ----------
+  var oldSvg = stage.querySelector('.planet-svg');
+  if (oldSvg) oldSvg.style.display = 'none';
+
+  var planet = stage.querySelector('.planet-3d');
+  if (!planet) {
+    planet = document.createElement('div');
+    planet.className = 'planet-3d';
+    planet.innerHTML = '<div class="tex"></div>';
+    stage.insertBefore(planet, stage.firstChild);
+  }
+  var moon = stage.querySelector('.moon');
+  if (!moon) {
+    moon = document.createElement('div');
+    moon.className = 'moon';
+    stage.appendChild(moon);
+  }
+  var hero = stage.querySelector('.hero-copy');
+  var oldStars = stage.querySelector('.stars');
+
+  // ---------- তারার দুই স্তর (দূরে ও কাছে) ----------
+  function makeLayer(n, minS, maxS, minO, maxO) {
+    var l = document.createElement('div');
+    l.className = 'm3-l';
+    for (var i = 0; i < n; i++) {
+      var s = document.createElement('i');
+      var size = minS + Math.random() * (maxS - minS);
+      s.style.cssText = 'left:' + (Math.random() * 100) + '%;top:' + (Math.random() * 75) + '%;width:' + size + 'px;height:' + size + 'px;' +
+        '--o:' + (minO + Math.random() * (maxO - minO)).toFixed(2) + ';--d:' + (3 + Math.random() * 4).toFixed(1) + 's;animation-delay:-' + (Math.random() * 6).toFixed(1) + 's';
+      l.appendChild(s);
+    }
+    stage.insertBefore(l, stage.firstChild);
+    return l;
+  }
+  var farStars = makeLayer(38, 1, 1.8, .25, .6);
+  var nearStars = makeLayer(14, 1.8, 3, .4, .9);
+
+  // ---------- থিম ----------
+  var THEMES = [
+    { n: 'মঙ্গল', hue: 0, glow: '255,74,31', glass: 'rgba(255,41,69,.30)' },
+    { n: 'পৃথিবী', hue: 205, glow: '70,150,255', glass: 'rgba(70,150,255,.30)' },
+    { n: 'নিয়ন', hue: 110, glow: '60,255,140', glass: 'rgba(60,255,140,.28)' }
+  ];
+  var ti = 0;
+  try { ti = parseInt(localStorage.getItem('m3theme') || '0', 10) || 0; } catch (e) {}
+  if (ti < 0 || ti >= THEMES.length) ti = 0;
+
+  var btn = document.createElement('button');
+  btn.className = 'm3-theme';
+  btn.setAttribute('aria-label', 'থিম বদলান');
+  btn.textContent = '🎨';
+  var label = document.createElement('div');
+  label.className = 'm3-name';
+  stage.appendChild(btn);
+  stage.appendChild(label);
+
+  var labelTimer;
+  function applyTheme(show) {
+    var t = THEMES[ti];
+    stage.style.setProperty('--m3-hue', t.hue + 'deg');
+    stage.style.setProperty('--m3-glow', t.glow);
+    document.documentElement.style.setProperty('--glow', t.glass);
+    if (show) {
+      label.textContent = t.n;
+      label.classList.add('on');
+      clearTimeout(labelTimer);
+      labelTimer = setTimeout(function () { label.classList.remove('on'); }, 1400);
+    }
+  }
+  btn.addEventListener('click', function () {
+    ti = (ti + 1) % THEMES.length;
+    try { localStorage.setItem('m3theme', String(ti)); } catch (e) {}
+    applyTheme(true);
+  });
+  applyTheme(false);
+
+  // ---------- নড়াচড়া (প্যারালাক্স) ----------
+  var tx = 0, ty = 0, x = 0, y = 0, lastInput = 0;
+  var b0 = null, g0 = null;
+  function clamp(v) { return Math.max(-1, Math.min(1, v)); }
+
+  if (!reduce) {
+    // ফোনের সেন্সর
+    window.addEventListener('deviceorientation', function (e) {
+      if (e.beta == null || e.gamma == null) return;
+      if (b0 === null) { b0 = e.beta; g0 = e.gamma; }
+      // ধীরে ধীরে নতুন ধরার ভঙ্গিতে কেন্দ্র ঠিক করে
+      b0 += (e.beta - b0) * 0.004;
+      g0 += (e.gamma - g0) * 0.004;
+      tx = clamp((e.gamma - g0) / 22);
+      ty = clamp((e.beta - b0) / 22);
+      lastInput = Date.now();
+    }, true);
+
+    // আঙুল / মাউস
+    function pointer(cx, cy) {
+      var r = stage.getBoundingClientRect();
+      tx = clamp(((cx - r.left) / r.width - 0.5) * 2);
+      ty = clamp(((cy - r.top) / r.height - 0.5) * 2);
+      lastInput = Date.now();
+    }
+    stage.addEventListener('touchmove', function (e) {
+      var t = e.touches[0];
+      if (t) pointer(t.clientX, t.clientY);
+    }, { passive: true });
+    stage.addEventListener('pointermove', function (e) { pointer(e.clientX, e.clientY); }, { passive: true });
+  }
+
+  function apply(px, py) {
+    var f = farStars, n = nearStars;
+    f.style.transform = 'translate3d(' + (px * -6) + 'px,' + (py * -5) + 'px,0)';
+    n.style.transform = 'translate3d(' + (px * -15) + 'px,' + (py * -12) + 'px,0)';
+    if (oldStars) oldStars.style.transform = 'translate3d(' + (px * -9) + 'px,' + (py * -7) + 'px,0)';
+    planet.style.transform = 'translate3d(' + (px * -11) + 'px,' + (py * -8) + 'px,0) rotateX(' + (py * -5) + 'deg) rotateY(' + (px * 7) + 'deg)';
+    planet.style.setProperty('--lx', (66 + px * 20) + '%');
+    planet.style.setProperty('--ly', (22 + py * 16) + '%');
+    moon.style.transform = 'translate3d(' + (px * 24) + 'px,' + (py * 16) + 'px,0)';
+    if (hero) hero.style.transform = 'translate3d(' + (px * -4) + 'px,' + (py * -3) + 'px,0)';
+  }
+
+  var raf;
+  function loop(t) {
+    var idle = Date.now() - lastInput > 2500;
+    var gx = tx, gy = ty;
+    if (idle && !reduce) {
+      gx = Math.sin(t / 3600) * 0.35;
+      gy = Math.cos(t / 4300) * 0.25;
+    }
+    x += (gx - x) * 0.08;
+    y += (gy - y) * 0.08;
+    apply(x, y);
+    raf = requestAnimationFrame(loop);
+  }
+
+  function start() { if (!raf) raf = requestAnimationFrame(loop); }
+  function stop() { if (raf) { cancelAnimationFrame(raf); raf = 0; } }
+  document.addEventListener('visibilitychange', function () { document.hidden ? stop() : start(); });
+  if (reduce) apply(0, 0); else start();
+})();
+
+</script>
+<script>
+(function () {
+  function go(u) { location.href = u; }
+
+  // [data-go] বাটন: AI Mode, Incognito ইত্যাদি
+  document.addEventListener('click', function (e) {
+    var t = e.target.closest ? e.target.closest('[data-go]') : null;
+    if (t) { e.preventDefault(); go(t.getAttribute('data-go')); }
+  });
+
+  // নিচের নেভ: ট্যাব, বুকমার্ক ও ডাউনলোড এখন নেটিভ স্ক্রিন খোলে (পুরোনো app.js-এর আগে ধরে)
+  var MAP = { tabs: 'mangal://tabs', bookmarks: 'mangal://bookmarks', downloads: 'mangal://downloads' };
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('.bottom-nav button[data-page]') : null;
+    if (!b) return;
+    var u = MAP[b.getAttribute('data-page')];
+    if (u) {
+      e.stopImmediatePropagation();
+      e.preventDefault();
+      go(u);
+    }
+  }, true);
+
+  // 🛡 আজকের ব্লক কাউন্টার: নেটিভ অ্যাপ URL-এর # অংশে পাঠায় (#b=আজ&t=মোট)
+  function bn(n) { return String(n).replace(/\d/g, function (d) { return '০১২৩৪৫৬৭৮৯'.charAt(d); }); }
+  var m = /b=(\d+)&t=(\d+)/.exec(location.hash || '');
+  var today = m ? parseInt(m[1], 10) : 0;
+  var total = m ? parseInt(m[2], 10) : 0;
+  var host = document.querySelector('.chips') || document.getElementById('searchForm');
+  if (host && host.parentNode) {
+    var card = document.createElement('div');
+    card.className = 'shield-card';
+    card.innerHTML = '<div class="sh-ic">🛡</div><div class="sh-tx"><b id="shNum">' + bn(0) + '</b> টি বিজ্ঞাপন ও ট্র্যাকার আজ আটকানো হয়েছে' +
+      '<small>মোট ' + bn(total) + ' টি • আপনার ব্রাউজিং আরও দ্রুত ও নিরাপদ</small></div>';
+    host.parentNode.insertBefore(card, host.nextSibling);
+    // সংখ্যা ০ থেকে গুনে উঠবে
+    var num = card.querySelector('#shNum');
+    var t0 = null;
+    function tick(ts) {
+      if (t0 === null) t0 = ts;
+      var p = Math.min(1, (ts - t0) / 900);
+      num.textContent = bn(Math.round(today * (1 - Math.pow(1 - p, 3))));
+      if (p < 1) requestAnimationFrame(tick);
+    }
+    if (today > 0) requestAnimationFrame(tick); else num.textContent = bn(0);
+  }
+})();
+
+</script>
 </body></html>
