@@ -448,6 +448,21 @@
     }
     if (today > 0) requestAnimationFrame(tick); else num.textContent = bn(0);
   }
+
+  // হোম মেনুর "Extension Store" আইটেম নেটিভ এক্সটেনশন পেজ খোলে
+  document.addEventListener('click', function (e) {
+    var el = e.target;
+    while (el && el !== document.body && el.nodeType === 1) {
+      var tx = el.textContent || '';
+      if (tx.indexOf('Extension Store') !== -1 && tx.length < 90) {
+        e.stopImmediatePropagation();
+        e.preventDefault();
+        go('mangal://extensions');
+        return;
+      }
+      el = el.parentElement;
+    }
+  }, true);
 })();
 
 </script>
