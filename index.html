@@ -412,6 +412,20 @@
     if (t) { e.preventDefault(); go(t.getAttribute('data-go')); }
   });
 
+  // হোম পেজ ছোট দেখালে (ডেস্কটপ-প্রস্থের ভিউপোর্ট) কার্ড ফোনের প্রস্থে বাড়িয়ে নেয়
+  function fit() {
+    try {
+      var shell = document.querySelector('.app-shell');
+      if (!shell) return;
+      document.body.style.zoom = '';
+      var vw = document.documentElement.clientWidth;
+      var w0 = shell.getBoundingClientRect().width;
+      if (w0 > 0 && w0 < vw * 0.85) document.body.style.zoom = String(Math.min(vw / w0, 3));
+    } catch (e) {}
+  }
+  window.addEventListener('load', fit);
+  window.addEventListener('resize', fit);
+
   // 🎤 ভয়েস সার্চ: নেটিভ স্পিচ রিকগনিশন খোলে
   document.addEventListener('click', function (e) {
     var v = e.target.closest ? e.target.closest('#voiceBtn') : null;

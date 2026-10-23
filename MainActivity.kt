@@ -522,7 +522,7 @@ class MainActivity : Activity() {
     // ================= উপরের বার (Chrome-এর মতো) =================
 
     private fun buildTopBar(): View {
-        val home = glassButton("⌂") { cur.session.loadUri(homeUrl()) }
+        val home = glassButton("⌂") { loadHome(cur) }
 
         addressIcon = TextView(this).apply { text = "🔍"; textSize = 14f }
         addressText = TextView(this).apply {
@@ -641,6 +641,10 @@ class MainActivity : Activity() {
                 request: GeckoSession.NavigationDelegate.LoadRequest
             ): GeckoResult<AllowOrDeny>? {
                 val uri = request.uri
+                if (isXpi(uri)) {
+                    geckoView.post { installExtension("এক্সটেনশন", uri) { } }
+                    return GeckoResult.fromValue(AllowOrDeny.DENY)
+                }
                 if (uri.startsWith("mangal://")) {
                     geckoView.post { handleCommand(uri.removePrefix("mangal://").trimEnd('/')) }
                     return GeckoResult.fromValue(AllowOrDeny.DENY)
@@ -824,7 +828,7 @@ class MainActivity : Activity() {
     }
 
     private fun closeTab(i: Int) {
-        if (tabs.size == 1) { tabs[0].session.loadUri(homeUrl()); return }
+        if (tabs.size == 1) { loadHome(tabs[0]); return }
         val t = tabs.removeAt(i)
         val wasCurrent = i == current
         if (i < current) current--
@@ -1539,7 +1543,7 @@ class MainActivity : Activity() {
     }
 
     private fun buildBottomNav(): View {
-        val home = navItem("⌂", "হোম") { cur.session.loadUri(homeUrl()) }
+        val home = navItem("⌂", "হোম") { loadHome(cur) }
         navHomeIcon = home.getChildAt(0) as TextView
         navHomeLabel = home.getChildAt(1) as TextView
         val items = listOf(
@@ -1749,7 +1753,15 @@ class MainActivity : Activity() {
     }
 
     /** পেজ নিজে যে ফাইল পাঠায় (PDF, APK, ZIP ইত্যাদি) */
+    private fun isXpi(uri: String): Boolean =
+        try { Uri.parse(uri).path?.endsWith(".xpi", ignoreCase = true) == true } catch (e: Exception) { false }
+
     private fun startDownload(r: WebResponse) {
+        val ct = r.headers.entries.firstOrNull { it.key.equals("content-type", true) }?.value ?: ""
+        if (isXpi(r.uri) || ct.contains("x-xpinstall", true)) {
+            geckoView.post { installExtension("এক্সটেনশন", r.uri) { } }
+            return
+        }
         val cd = r.headers.entries.firstOrNull { it.key.equals("content-disposition", true) }?.value
         val mime = r.headers.entries.firstOrNull { it.key.equals("content-type", true) }?.value?.substringBefore(';')
         val name = URLUtil.guessFileName(r.uri, cd, mime)
@@ -2893,7 +2905,24 @@ class MainActivity : Activity() {
             MenuItem("⧉  লিংক কপি", real) { copyText(t.url) },
             MenuItem(if (t.desktop) "✓  ডেস্কটপ সাইট" else "🖥  ডেস্কটপ সাইট", real) { toggleDesktop() },
             MenuItem("🌐  পেজ অনুবাদ (বাংলা)", real) { translatePage(t) }
-        ), true)
+        ) + (if (t.url.contains("chromewebstore.google.com")) listOf(
+            MenuItem("🦊  Mozilla স্টোরে এটা খুঁজুন") {
+                val q = t.title.replace(" - Chrome Web Store", "").trim()
+                captureThumb {
+                    newTab(false, "https://addons.mozilla.org/en-US/android/search/?q=" + URLEncoder.encode(q, "UTF-8"))
+                }
+            }
+        ) else emptyList<MenuItem>()), true)
+    }
+
+    /** হোম পেজ সবসময় মোবাইল মোডে খোলে (ডেস্কটপ মোড আটকে থাকলে হোম ছোট দেখাত) */
+    private fun loadHome(t: Tab) {
+        if (t.desktop) {
+            t.desktop = false
+            t.session.settings.userAgentMode = GeckoSessionSettings.USER_AGENT_MODE_MOBILE
+            t.session.settings.viewportMode = GeckoSessionSettings.VIEWPORT_MODE_MOBILE
+        }
+        t.session.loadUri(homeUrl())
     }
 
     private fun toggleDesktop() {
