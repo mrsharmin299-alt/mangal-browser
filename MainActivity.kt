@@ -100,6 +100,9 @@ class MainActivity : Activity() {
     private lateinit var groupStrip: LinearLayout
     private lateinit var topBarView: View
     private lateinit var shieldBadge: TextView
+    private lateinit var bottomNav: LinearLayout
+    private lateinit var navHomeIcon: TextView
+    private lateinit var navHomeLabel: TextView
     private var adblock = true
     private var blockedToday = 0
     private var blockedTotal = 0
@@ -322,6 +325,7 @@ class MainActivity : Activity() {
             visibility = View.GONE
         }
         column.addView(groupStrip, LinearLayout.LayoutParams(-1, dp(52)))
+        column.addView(buildBottomNav(), LinearLayout.LayoutParams(-1, -2))
 
         root.addView(column, FrameLayout.LayoutParams(-1, -1))
         setContentView(root)
@@ -430,6 +434,7 @@ class MainActivity : Activity() {
         addressPill.background = glass(22, if (t.priv) VIOLET else Color.WHITE, 0x24)
         tabCount.text = tabs.size.toString()
         updateBadge()
+        updateNav()
         rebuildGroupStrip()
     }
 
@@ -1344,6 +1349,121 @@ class MainActivity : Activity() {
         toast(if (adblock) "বিজ্ঞাপন ব্লক চালু" else "বিজ্ঞাপন ব্লক বন্ধ")
     }
 
+    // ================= নিচের স্থায়ী বার (সব সাইটে থাকে) =================
+
+    private fun navItem(icon: String, label: String, onClick: () -> Unit): LinearLayout {
+        val ic = TextView(this).apply {
+            text = icon; textSize = 21f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
+        }
+        val lb = TextView(this).apply {
+            text = label; textSize = 11f; gravity = Gravity.CENTER
+            setTextColor(Color.argb(175, 255, 255, 255))
+        }
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            addView(ic)
+            addView(lb)
+            setOnClickListener { onClick() }
+            pressable(this)
+        }
+    }
+
+    private fun buildBottomNav(): View {
+        val home = navItem("⌂", "হোম") { cur.session.loadUri(homeUrl()) }
+        navHomeIcon = home.getChildAt(0) as TextView
+        navHomeLabel = home.getChildAt(1) as TextView
+        val items = listOf(
+            home,
+            navItem("▢", "ট্যাব") { captureThumb { }; showTabSwitcher() },
+            navItem("★", "বুকমার্ক") { showLibrary(false) },
+            navItem("⬇", "ডাউনলোড") { openDownloads() },
+            navItem("⚙", "সেটিংস") { showSettings() }
+        )
+        bottomNav = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            clipChildren = false
+            background = glass(0, alpha = 0x30)
+            setPadding(dp(4), dp(6), dp(4), dp(6))
+            lift(this, 10)
+        }
+        items.forEach { bottomNav.addView(it, LinearLayout.LayoutParams(0, dp(52), 1f)) }
+        return bottomNav
+    }
+
+    private fun updateNav() {
+        val active = isHome(cur.url)
+        navHomeIcon.setTextColor(if (active) RED else Color.WHITE)
+        navHomeLabel.setTextColor(if (active) RED else Color.argb(175, 255, 255, 255))
+        navHomeIcon.setShadowLayer(if (active) dpf(8) else 0f, 0f, 0f, RED)
+    }
+
+    private fun openDownloads() {
+        try {
+            startActivity(Intent(DownloadManager.ACTION_VIEW_DOWNLOADS))
+        } catch (e: Exception) {
+            toast("ডাউনলোড তালিকা খোলা যায়নি")
+        }
+    }
+
+    // ================= সেটিংস =================
+
+    private fun showSettings() {
+        val page = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.argb(0xF2, 5, 3, 4))
+            isClickable = true
+            setPadding(dp(12), dp(8), dp(12), 0)
+        }
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+
+        fun render() {
+            list.removeAllViews()
+            fun row(icon: String, title: String, sub: String, f: () -> Unit) {
+                list.addView(
+                    suggestRow(icon, title, sub) { f() },
+                    LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) }
+                )
+            }
+            row("🛡", "বিজ্ঞাপন ও ট্র্যাকার ব্লক",
+                if (adblock) "চালু • চাপলে বন্ধ হবে" else "বন্ধ • চাপলে চালু হবে") { toggleAdblock(); render() }
+            row("📊", "আজ ${bn(blockedToday)}টি • মোট ${bn(blockedTotal)}টি আটকানো হয়েছে", "ট্র্যাকার সুরক্ষার হিসাব") { }
+            row("🖥", "ডেস্কটপ সাইট",
+                if (isHome(cur.url)) "কোনো ওয়েবসাইট খুলে চাপুন"
+                else if (cur.desktop) "এই ট্যাবে চালু • চাপলে বন্ধ হবে" else "এই ট্যাবে বন্ধ • চাপলে চালু হবে") {
+                if (isHome(cur.url)) toast("আগে কোনো ওয়েবসাইট খুলুন") else { toggleDesktop(); render() }
+            }
+            row("🕶", "নতুন ইনকগনিটো ট্যাব", "হিস্টরি সেভ হয় না") {
+                dismissOverlay(); captureThumb { newTab(priv = true) }
+            }
+            row("🕘", "হিস্টরি দেখুন", "${bn(loadList("hist").size)}টি পেজ") { dismissOverlay(); showLibrary(true) }
+            row("🧹", "হিস্টরি মুছুন", "সব ব্রাউজিং হিস্টরি মুছে যাবে") {
+                saveList("hist", emptyList()); toast("হিস্টরি মুছে গেছে"); render()
+            }
+            row("🗑", "সব বুকমার্ক মুছুন", "${bn(loadList("bm").size)}টি বুকমার্ক আছে") {
+                saveList("bm", emptyList()); toast("বুকমার্ক মুছে গেছে"); render()
+            }
+        }
+
+        val top = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            clipChildren = false
+            addView(glassButton("←") { dismissOverlay() }, LinearLayout.LayoutParams(dp(42), dp(42)))
+            addView(TextView(this@MainActivity).apply {
+                text = "⚙ সেটিংস"; textSize = 18f; typeface = Typeface.DEFAULT_BOLD
+                setTextColor(Color.WHITE)
+                setShadowLayer(dpf(6), 0f, dpf(2), Color.argb(190, 255, 41, 69))
+            }, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(14) })
+        }
+        page.addView(top, LinearLayout.LayoutParams(-1, -2))
+        page.addView(ScrollView(this).apply { addView(list) },
+            LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(6) })
+        render()
+        addOverlay(page)
+    }
+
     // ================= হোম পেজ থেকে নেটিভ কমান্ড =================
 
     private fun handleCommand(cmd: String) {
@@ -1423,6 +1543,7 @@ class MainActivity : Activity() {
     private fun setFullscreen(on: Boolean) {
         fullscreen = on
         topBarView.visibility = if (on) View.GONE else View.VISIBLE
+        bottomNav.visibility = if (on) View.GONE else View.VISIBLE
         progress.visibility = View.INVISIBLE
         if (on) groupStrip.visibility = View.GONE else rebuildGroupStrip()
         if (Build.VERSION.SDK_INT >= 30) {
