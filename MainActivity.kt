@@ -1623,55 +1623,225 @@ class MainActivity : Activity() {
             isClickable = true
             setPadding(dp(12), dp(8), dp(12), 0)
         }
-        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val list = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, 0, 0, dp(28))
+        }
+        var confirmKey = ""   // মোছার আগে "আবার চাপুন" নিশ্চিতকরণ
+
+        // ---------- নির্মাণ-সাহায্যকারী ----------
+        fun toggleView(on: Boolean): View = FrameLayout(this).apply {
+            minimumWidth = dp(50)
+            minimumHeight = dp(28)
+            background = GradientDrawable().apply {
+                cornerRadius = dpf(14)
+                setColor(if (on) RED else Color.argb(0x55, 255, 255, 255))
+                setStroke(dp(1), Color.argb(0x77, 255, 255, 255))
+            }
+            addView(View(this@MainActivity).apply {
+                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.WHITE) }
+                elevation = dpf(2)
+            }, FrameLayout.LayoutParams(
+                dp(22), dp(22),
+                (if (on) Gravity.END else Gravity.START) or Gravity.CENTER_VERTICAL
+            ).apply { setMargins(dp(3), 0, dp(3), 0) })
+        }
+
+        fun chevron(): View = TextView(this).apply {
+            text = "›"; textSize = 24f; setTextColor(Color.argb(170, 255, 255, 255))
+        }
+
+        fun LinearLayout.item(
+            icon: String, title: String, sub: String?, trailing: View?,
+            warn: Boolean = false, onClick: (() -> Unit)?
+        ) {
+            if (childCount > 0) addView(View(this@MainActivity).apply {
+                setBackgroundColor(Color.argb(0x26, 255, 255, 255))
+            }, LinearLayout.LayoutParams(-1, dp(1)).apply { setMargins(dp(60), 0, dp(12), 0) })
+            val row = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(12), dp(13), dp(12), dp(13))
+                if (onClick != null) {
+                    pressable(this)
+                    setOnClickListener { onClick() }
+                }
+            }
+            row.addView(TextView(this@MainActivity).apply {
+                text = icon; textSize = 17f; gravity = Gravity.CENTER
+                background = glass(19, if (warn) Color.rgb(255, 80, 80) else RED, 0x33, 0x66)
+            }, LinearLayout.LayoutParams(dp(38), dp(38)))
+            val col = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.VERTICAL }
+            col.addView(TextView(this@MainActivity).apply {
+                text = title; textSize = 15.5f; setTextColor(Color.WHITE)
+            })
+            if (sub != null) col.addView(TextView(this@MainActivity).apply {
+                text = sub; textSize = 12f
+                setTextColor(if (warn) Color.rgb(255, 150, 150) else Color.argb(165, 255, 255, 255))
+            })
+            row.addView(col, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(12) })
+            if (trailing != null) row.addView(trailing, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(8) })
+            addView(row)
+        }
+
+        fun LinearLayout.chips(options: List<String>, selected: Int, onPick: (Int) -> Unit) {
+            val bar = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(dp(60), dp(0), dp(12), dp(12))
+            }
+            options.forEachIndexed { i, label ->
+                val sel = i == selected
+                bar.addView(TextView(this@MainActivity).apply {
+                    text = label; textSize = 13f
+                    typeface = if (sel) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+                    setTextColor(Color.WHITE)
+                    setPadding(dp(14), dp(7), dp(14), dp(7))
+                    background = if (sel) glass(16, RED, 0x77, 0xDD) else glass(16, alpha = 0x26)
+                    pressable(this)
+                    setOnClickListener { onPick(i) }
+                }, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(8) })
+            }
+            addView(android.widget.HorizontalScrollView(this@MainActivity).apply {
+                isHorizontalScrollBarEnabled = false
+                addView(bar)
+            })
+        }
+
+        fun section(title: String) {
+            list.addView(TextView(this).apply {
+                text = title; textSize = 13f; typeface = Typeface.DEFAULT_BOLD
+                setTextColor(Color.argb(210, 255, 120, 135))
+                setPadding(dp(8), dp(22), dp(8), dp(8))
+            })
+        }
+
+        fun group(build: LinearLayout.() -> Unit) {
+            val g = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                background = glass(22, alpha = 0x2A, strokeAlpha = 0x66)
+                lift(this, 6)
+                setPadding(dp(2), dp(4), dp(2), dp(4))
+            }
+            g.build()
+            list.addView(g, LinearLayout.LayoutParams(-1, -2))
+        }
 
         fun render() {
             list.removeAllViews()
-            fun row(icon: String, title: String, sub: String, f: () -> Unit) {
-                list.addView(
-                    suggestRow(icon, title, sub) { f() },
-                    LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) }
-                )
+
+            // ওপরে সুরক্ষার সারাংশ কার্ড
+            val stat = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                background = glass(22, Color.rgb(60, 255, 140), 0x30, 0x77)
+                lift(this, 6, Color.rgb(60, 255, 140))
+                setPadding(dp(16), dp(14), dp(16), dp(14))
             }
-            row("🛡", "বিজ্ঞাপন ও ট্র্যাকার ব্লক",
-                if (adblock) "চালু • চাপলে বন্ধ হবে" else "বন্ধ • চাপলে চালু হবে") { toggleAdblock(); render() }
-            row("📊", "আজ ${bn(blockedToday)}টি • মোট ${bn(blockedTotal)}টি আটকানো হয়েছে", "ট্র্যাকার সুরক্ষার হিসাব") { }
-            row(if (cur.desktop) "🖥" else "📱", if (cur.desktop) "ডেস্কটপ সাইট" else "মোবাইল সাইট",
-                if (isHome(cur.url)) "কোনো ওয়েবসাইট খুলে চাপুন"
-                else if (cur.desktop) "এই ট্যাবে ডেস্কটপ • চাপলে মোবাইলে ফিরবে" else "এই ট্যাবে মোবাইল • চাপলে ডেস্কটপ হবে") {
-                if (isHome(cur.url)) toast("আগে কোনো ওয়েবসাইট খুলুন") else { toggleDesktop(); render() }
+            stat.addView(TextView(this).apply {
+                text = "🛡"; textSize = 22f; gravity = Gravity.CENTER
+                background = glass(24, Color.rgb(60, 255, 140), 0x55, 0x99)
+            }, LinearLayout.LayoutParams(dp(48), dp(48)))
+            val statCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+            statCol.addView(TextView(this).apply {
+                text = "আজ ${bn(blockedToday)}টি বিজ্ঞাপন ও ট্র্যাকার আটকানো হয়েছে"
+                textSize = 14.5f; typeface = Typeface.DEFAULT_BOLD; setTextColor(Color.WHITE)
+            })
+            statCol.addView(TextView(this).apply {
+                text = "মোট ${bn(blockedTotal)}টি • সুরক্ষা ${if (adblock) "চালু" else "বন্ধ"}"
+                textSize = 12f; setTextColor(Color.argb(190, 255, 255, 255))
+            })
+            stat.addView(statCol, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(14) })
+            list.addView(stat, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+
+            val histCount = loadList("hist").size
+            val bmCount = loadList("bm").size
+
+            section("🛡  নিরাপত্তা ও গোপনীয়তা")
+            group {
+                item("🛡", "বিজ্ঞাপন ও ট্র্যাকার ব্লক", "ওয়েবসাইটের বিজ্ঞাপন আটকায়", toggleView(adblock)) {
+                    toggleAdblock(); render()
+                }
+                item("🕶", "নতুন ইনকগনিটো ট্যাব", "হিস্টরি সেভ হয় না", chevron()) {
+                    dismissOverlay(); captureThumb { newTab(priv = true) }
+                }
+                item("🍪", "কুকি ও ক্যাশ মুছুন",
+                    if (confirmKey == "data") "⚠ নিশ্চিত করতে আবার চাপুন" else "সব সাইটের লগইনও চলে যাবে",
+                    chevron(), warn = confirmKey == "data") {
+                    if (confirmKey == "data") { confirmKey = ""; clearBrowsingData() } else confirmKey = "data"
+                    render()
+                }
+                item("🧹", "হিস্টরি মুছুন",
+                    if (confirmKey == "hist") "⚠ নিশ্চিত করতে আবার চাপুন" else "${bn(histCount)}টি পেজ",
+                    chevron(), warn = confirmKey == "hist") {
+                    if (confirmKey == "hist") { confirmKey = ""; saveList("hist", emptyList()); toast("হিস্টরি মুছে গেছে") }
+                    else confirmKey = "hist"
+                    render()
+                }
             }
-            row("⭐", "ডিফল্ট ব্রাউজার",
-                if (isDefaultBrowser()) "মঙ্গল এখন ডিফল্ট ✓" else "অন্য অ্যাপের লিংক এখানে খুলতে চাপুন") { requestDefaultBrowser() }
-            row("🔍", "সার্চ ইঞ্জিন", "${engines[engIdx()].name} • চাপলে বদলাবে") {
-                prefs.edit().putInt("engine", (engIdx() + 1) % engines.size).apply(); render()
+
+            section("🎨  দেখা ও অনুভব")
+            group {
+                item("🌙", "নাইট মোড", "সাইটে ডার্ক থিম • পেজ রিলোড করুন", toggleView(prefs.getBoolean("night", false))) {
+                    prefs.edit().putBoolean("night", !prefs.getBoolean("night", false)).apply()
+                    applyRuntimePrefs(); render()
+                }
+                item(if (cur.desktop) "🖥" else "📱", "ডেস্কটপ সাইট",
+                    if (isHome(cur.url)) "কোনো ওয়েবসাইট খুলে চাপুন"
+                    else if (cur.desktop) "এই ট্যাবে ডেস্কটপ" else "এই ট্যাবে মোবাইল",
+                    toggleView(cur.desktop && !isHome(cur.url))) {
+                    if (isHome(cur.url)) toast("আগে কোনো ওয়েবসাইট খুলুন") else { toggleDesktop(); render() }
+                }
+                item("🔤", "লেখার আকার", "${(fontSteps[fontIdx()] * 100).toInt()}%", null, onClick = null)
+                chips(fontSteps.map { "${(it * 100).toInt()}%" }, fontIdx()) { i ->
+                    prefs.edit().putInt("font", i).apply(); applyRuntimePrefs(); render()
+                }
+                item("🔍", "সার্চ ইঞ্জিন", engines[engIdx()].name, null, onClick = null)
+                chips(engines.map { it.name }, engIdx()) { i ->
+                    prefs.edit().putInt("engine", i).apply(); render()
+                }
             }
-            row("🔤", "লেখার আকার", "${(fontSteps[fontIdx()] * 100).toInt()}% • চাপলে বদলাবে") {
-                prefs.edit().putInt("font", (fontIdx() + 1) % fontSteps.size).apply()
-                applyRuntimePrefs(); render()
+
+            section("🚀  ব্রাউজার")
+            group {
+                item("⭐", "ডিফল্ট ব্রাউজার",
+                    if (isDefaultBrowser()) "মঙ্গল এখন ডিফল্ট ✓" else "অন্য অ্যাপের লিংক এখানে খুলবে", chevron()) {
+                    requestDefaultBrowser()
+                }
+                item("🗂", "আগের ট্যাব ফিরিয়ে আনুন", "অ্যাপ খুললে আগের ট্যাব আসবে",
+                    toggleView(prefs.getBoolean("restore", true))) {
+                    prefs.edit().putBoolean("restore", !prefs.getBoolean("restore", true)).apply(); render()
+                }
+                item("🧩", "এক্সটেনশন স্টোর", "মঙ্গল স্টোর • Mozilla • Chrome", chevron()) {
+                    dismissOverlay(); showExtensions()
+                }
             }
-            row("🌙", "নাইট মোড (সাইটে ডার্ক থিম)",
-                if (prefs.getBoolean("night", false)) "চালু • পেজ রিলোড করুন" else "বন্ধ • চাপলে চালু হবে") {
-                prefs.edit().putBoolean("night", !prefs.getBoolean("night", false)).apply()
-                applyRuntimePrefs(); render()
+
+            section("📚  বুকমার্ক ও হিস্টরি")
+            group {
+                item("★", "বুকমার্ক তালিকা", "${bn(bmCount)}টি বুকমার্ক", chevron()) {
+                    dismissOverlay(); showLibrary(false)
+                }
+                item("🕘", "হিস্টরি দেখুন", "${bn(histCount)}টি পেজ", chevron()) {
+                    dismissOverlay(); showLibrary(true)
+                }
+                item("📥", "বুকমার্ক ইমপোর্ট", "Chrome বা অন্য ব্রাউজারের HTML ফাইল", chevron()) {
+                    pickBookmarkFile()
+                }
+                item("🗑", "সব বুকমার্ক মুছুন",
+                    if (confirmKey == "bm") "⚠ নিশ্চিত করতে আবার চাপুন" else "${bn(bmCount)}টি বুকমার্ক",
+                    chevron(), warn = confirmKey == "bm") {
+                    if (confirmKey == "bm") { confirmKey = ""; saveList("bm", emptyList()); toast("বুকমার্ক মুছে গেছে") }
+                    else confirmKey = "bm"
+                    render()
+                }
             }
-            row("🗂", "আগের ট্যাব ফিরিয়ে আনুন",
-                if (prefs.getBoolean("restore", true)) "চালু • অ্যাপ খুললে আগের ট্যাব আসবে" else "বন্ধ") {
-                prefs.edit().putBoolean("restore", !prefs.getBoolean("restore", true)).apply(); render()
-            }
-            row("📥", "বুকমার্ক ইমপোর্ট", "Chrome বা অন্য ব্রাউজারের HTML ফাইল থেকে") { pickBookmarkFile() }
-            row("🍪", "কুকি ও ক্যাশ মুছুন", "সব সাইটের লগইনও চলে যাবে") { clearBrowsingData() }
-            row("🧩", "এক্সটেনশন", "uBlock Origin, Dark Reader ও আরও") { dismissOverlay(); showExtensions() }
-            row("🕶", "নতুন ইনকগনিটো ট্যাব", "হিস্টরি সেভ হয় না") {
-                dismissOverlay(); captureThumb { newTab(priv = true) }
-            }
-            row("🕘", "হিস্টরি দেখুন", "${bn(loadList("hist").size)}টি পেজ") { dismissOverlay(); showLibrary(true) }
-            row("🧹", "হিস্টরি মুছুন", "সব ব্রাউজিং হিস্টরি মুছে যাবে") {
-                saveList("hist", emptyList()); toast("হিস্টরি মুছে গেছে"); render()
-            }
-            row("🗑", "সব বুকমার্ক মুছুন", "${bn(loadList("bm").size)}টি বুকমার্ক আছে") {
-                saveList("bm", emptyList()); toast("বুকমার্ক মুছে গেছে"); render()
-            }
+
+            list.addView(TextView(this).apply {
+                text = "🚀 মঙ্গল ব্রাউজার • সংস্করণ 1.0.0"
+                textSize = 12f; gravity = Gravity.CENTER
+                setTextColor(Color.argb(120, 255, 255, 255))
+                setPadding(0, dp(22), 0, 0)
+            })
         }
 
         val top = LinearLayout(this).apply {
