@@ -28,6 +28,8 @@ jobs:
           for f in index.html app.js style.css icons.js firebase-config.js; do
             cp "$(pick $f)" $P/app/src/main/assets/web/
           done
+          # নিজের এক্সটেনশন: রিপোর extensions/ ফোল্ডার অ্যাপের ভেতরে ঢোকে
+          if [ -d extensions ]; then cp -r extensions $P/app/src/main/assets/extensions; fi
           cat > $P/gradle.properties <<'EOF'
           android.useAndroidX=true
           org.gradle.jvmargs=-Xmx3g
