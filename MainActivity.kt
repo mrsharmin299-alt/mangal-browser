@@ -109,6 +109,7 @@ class MainActivity : Activity() {
     private lateinit var groupStrip: LinearLayout
     private lateinit var topBarView: View
     private lateinit var shieldBadge: TextView
+    private lateinit var modeBadge: TextView
     private lateinit var bottomNav: LinearLayout
     private lateinit var navHomeIcon: TextView
     private lateinit var navHomeLabel: TextView
@@ -155,6 +156,27 @@ class MainActivity : Activity() {
         val shine = GradientDrawable(
             GradientDrawable.Orientation.TOP_BOTTOM,
             intArrayOf(Color.argb(0x45, 255, 255, 255), Color.TRANSPARENT)
+        ).apply { cornerRadii = floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f) }
+        return LayerDrawable(arrayOf(base, shine)).apply {
+            setLayerInset(1, dp(1), dp(1), dp(1), 0)
+            setLayerGravity(1, Gravity.TOP)
+            setLayerHeight(1, maxOf(dp(radius), dp(10)))
+        }
+    }
+
+    /** গাঢ় কাচ: প্রায় অস্বচ্ছ গাঢ় রঙ + আলোকিত বর্ডার + উপরে শাইন (পপআপে লেখা স্পষ্ট দেখায়) */
+    private fun darkGlass(radius: Int): LayerDrawable {
+        val r = dpf(radius)
+        val base = GradientDrawable(
+            GradientDrawable.Orientation.TOP_BOTTOM,
+            intArrayOf(Color.argb(0xF4, 44, 16, 26), Color.argb(0xFA, 14, 6, 10))
+        ).apply {
+            cornerRadius = r
+            setStroke(dp(1), Color.argb(0xAA, 255, 255, 255))
+        }
+        val shine = GradientDrawable(
+            GradientDrawable.Orientation.TOP_BOTTOM,
+            intArrayOf(Color.argb(0x3A, 255, 255, 255), Color.TRANSPARENT)
         ).apply { cornerRadii = floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f) }
         return LayerDrawable(arrayOf(base, shine)).apply {
             setLayerInset(1, dp(1), dp(1), dp(1), 0)
@@ -540,6 +562,14 @@ class MainActivity : Activity() {
             visibility = View.GONE
             setOnClickListener { showShieldInfo() }
         }
+        modeBadge = TextView(this).apply {
+            textSize = 13f
+            gravity = Gravity.CENTER
+            setPadding(dp(8), dp(3), dp(8), dp(3))
+            background = glass(12, alpha = 0x30)
+            visibility = View.GONE
+            setOnClickListener { toggleDesktop() }
+        }
         addressPill = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -549,6 +579,7 @@ class MainActivity : Activity() {
             addView(addressIcon)
             addView(addressText, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(8) })
             addView(shieldBadge, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(6) })
+            addView(modeBadge, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(6) })
             setOnClickListener { showOmnibox() }
         }
 
@@ -600,6 +631,9 @@ class MainActivity : Activity() {
         addressText.text = if (home) "সার্চ করুন বা URL লিখুন" else display(t.url)
         addressText.setTextColor(if (home) Color.argb(160, 255, 255, 255) else Color.WHITE)
         addressPill.background = glass(22, if (t.priv) VIOLET else Color.WHITE, 0x24)
+        modeBadge.visibility = if (home) View.GONE else View.VISIBLE
+        modeBadge.text = if (t.desktop) "🖥" else "📱"
+        modeBadge.background = if (t.desktop) glass(12, RED, 0x66, 0xCC) else glass(12, alpha = 0x30)
         tabCount.text = tabs.size.toString()
         updateBadge()
         updateNav()
@@ -1602,9 +1636,9 @@ class MainActivity : Activity() {
             row("🛡", "বিজ্ঞাপন ও ট্র্যাকার ব্লক",
                 if (adblock) "চালু • চাপলে বন্ধ হবে" else "বন্ধ • চাপলে চালু হবে") { toggleAdblock(); render() }
             row("📊", "আজ ${bn(blockedToday)}টি • মোট ${bn(blockedTotal)}টি আটকানো হয়েছে", "ট্র্যাকার সুরক্ষার হিসাব") { }
-            row("🖥", "ডেস্কটপ সাইট",
+            row(if (cur.desktop) "🖥" else "📱", if (cur.desktop) "ডেস্কটপ সাইট" else "মোবাইল সাইট",
                 if (isHome(cur.url)) "কোনো ওয়েবসাইট খুলে চাপুন"
-                else if (cur.desktop) "এই ট্যাবে চালু • চাপলে বন্ধ হবে" else "এই ট্যাবে বন্ধ • চাপলে চালু হবে") {
+                else if (cur.desktop) "এই ট্যাবে ডেস্কটপ • চাপলে মোবাইলে ফিরবে" else "এই ট্যাবে মোবাইল • চাপলে ডেস্কটপ হবে") {
                 if (isHome(cur.url)) toast("আগে কোনো ওয়েবসাইট খুলুন") else { toggleDesktop(); render() }
             }
             row("⭐", "ডিফল্ট ব্রাউজার",
@@ -2765,7 +2799,7 @@ class MainActivity : Activity() {
         onCancel: (() -> Unit)?
     ) {
         val scrim = FrameLayout(this).apply {
-            setBackgroundColor(Color.argb(0x66, 5, 3, 4))
+            setBackgroundColor(Color.argb(0x99, 5, 3, 4))
             setOnClickListener { val c = overlayCancel; dismissOverlay(); c?.invoke() }
         }
 
@@ -2778,7 +2812,7 @@ class MainActivity : Activity() {
             val blur = ImageView(this).apply {
                 scaleType = ImageView.ScaleType.FIT_XY
                 setImageBitmap(shot)
-                setColorFilter(Color.argb(120, 12, 4, 8), PorterDuff.Mode.SRC_ATOP)
+                setColorFilter(Color.argb(170, 12, 4, 8), PorterDuff.Mode.SRC_ATOP)
                 if (Build.VERSION.SDK_INT >= 31) {
                     setRenderEffect(RenderEffect.createBlurEffect(24f, 24f, Shader.TileMode.CLAMP))
                 }
@@ -2791,7 +2825,7 @@ class MainActivity : Activity() {
 
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = glass(24, Color.WHITE, 0x3A, 0x88)
+            background = darkGlass(24)
             setPadding(dp(6), dp(10), dp(6), dp(10))
             isClickable = true
             lift(this, 18)
@@ -2843,7 +2877,7 @@ class MainActivity : Activity() {
             card.addView(row)
 
             if (idx < items.size - 1) {
-                card.addView(View(this).apply { setBackgroundColor(Color.argb(0x22, 255, 255, 255)) },
+                card.addView(View(this).apply { setBackgroundColor(Color.argb(0x33, 255, 255, 255)) },
                     LinearLayout.LayoutParams(-1, dp(1)).apply { setMargins(dp(14), 0, dp(14), 0) })
             }
 
@@ -2903,7 +2937,7 @@ class MainActivity : Activity() {
             MenuItem(if (adblock) "🛡  বিজ্ঞাপন ব্লক: চালু" else "🛡  বিজ্ঞাপন ব্লক: বন্ধ") { toggleAdblock() },
             MenuItem("⇪  শেয়ার", real) { shareText(t.url) },
             MenuItem("⧉  লিংক কপি", real) { copyText(t.url) },
-            MenuItem(if (t.desktop) "✓  ডেস্কটপ সাইট" else "🖥  ডেস্কটপ সাইট", real) { toggleDesktop() },
+            MenuItem(if (t.desktop) "🖥  ডেস্কটপ সাইট: চালু ✓" else "📱  মোবাইল সাইট (ডেস্কটপ করুন)", real) { toggleDesktop() },
             MenuItem("🌐  পেজ অনুবাদ (বাংলা)", real) { translatePage(t) }
         ) + (if (t.url.contains("chromewebstore.google.com")) listOf(
             MenuItem("🦊  Mozilla স্টোরে এটা খুঁজুন") {
@@ -2933,6 +2967,8 @@ class MainActivity : Activity() {
         t.session.settings.viewportMode =
             if (t.desktop) GeckoSessionSettings.VIEWPORT_MODE_DESKTOP else GeckoSessionSettings.VIEWPORT_MODE_MOBILE
         t.session.reload()
+        refreshChrome()
+        toast(if (t.desktop) "🖥 ডেস্কটপ সাইট চালু" else "📱 মোবাইল সাইট চালু")
     }
 
     private fun showLinkMenu(tab: Tab, el: GeckoSession.ContentDelegate.ContextElement) {
