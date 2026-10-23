@@ -46,6 +46,8 @@ import android.view.WindowInsetsController
 import android.webkit.URLUtil
 import org.json.JSONArray
 import org.json.JSONObject
+import org.mozilla.geckoview.WebExtension
+import org.mozilla.geckoview.WebExtensionController
 import org.mozilla.geckoview.WebResponse
 import org.mozilla.geckoview.AllowOrDeny
 import org.mozilla.geckoview.GeckoResult
@@ -279,6 +281,7 @@ class MainActivity : Activity() {
         }
         adblock = prefs.getBoolean("adblock", true)
         loadBlocked()
+        setupExtensionPrompts()
 
         geckoView = GeckoView(this)
         geckoView.setAutofillEnabled(true) // সিস্টেমের পাসওয়ার্ড ম্যানেজার/অটোফিল
@@ -1438,6 +1441,7 @@ class MainActivity : Activity() {
                 else if (cur.desktop) "এই ট্যাবে চালু • চাপলে বন্ধ হবে" else "এই ট্যাবে বন্ধ • চাপলে চালু হবে") {
                 if (isHome(cur.url)) toast("আগে কোনো ওয়েবসাইট খুলুন") else { toggleDesktop(); render() }
             }
+            row("🧩", "এক্সটেনশন", "uBlock Origin, Dark Reader ও আরও") { dismissOverlay(); showExtensions() }
             row("🕶", "নতুন ইনকগনিটো ট্যাব", "হিস্টরি সেভ হয় না") {
                 dismissOverlay(); captureThumb { newTab(priv = true) }
             }
@@ -1478,6 +1482,7 @@ class MainActivity : Activity() {
             "incognito" -> captureThumb { newTab(priv = true) }
             "newtab" -> captureThumb { newTab() }
             "downloads" -> showDownloads()
+            "extensions" -> showExtensions()
         }
     }
 
@@ -1903,6 +1908,153 @@ class MainActivity : Activity() {
         dlHandler.postDelayed(tick, 500)
     }
 
+    // ================= এক্সটেনশন (Firefox add-ons, GeckoView) =================
+
+    private class ExtInfo(val name: String, val desc: String, val id: String, val url: String, val icon: String)
+
+    private val curatedExtensions = listOf(
+        ExtInfo("uBlock Origin", "শক্তিশালী বিজ্ঞাপন ব্লকার", "uBlock0@raymondhill.net",
+            "https://addons.mozilla.org/firefox/downloads/latest/ublock-origin/latest.xpi", "🛡"),
+        ExtInfo("Dark Reader", "যেকোনো ওয়েবসাইটে ডার্ক মোড", "addon@darkreader.org",
+            "https://addons.mozilla.org/firefox/downloads/latest/darkreader/latest.xpi", "🌙"),
+        ExtInfo("Privacy Badger", "লুকানো ট্র্যাকার আটকায় (EFF)", "jid1-MnnxcxisBPnSXQ@jetpack",
+            "https://addons.mozilla.org/firefox/downloads/latest/privacy-badger17/latest.xpi", "🦡")
+    )
+
+    /** ইনস্টলের আগে অনুমতি জিজ্ঞাসা (গ্লাস পপআপ) */
+    private fun setupExtensionPrompts() {
+        runtime!!.webExtensionController.promptDelegate = object : WebExtensionController.PromptDelegate {
+            override fun onInstallPromptRequest(
+                extension: WebExtension,
+                permissions: Array<String>,
+                origins: Array<String>
+            ): GeckoResult<WebExtension.PermissionPromptResponse>? {
+                val res = GeckoResult<WebExtension.PermissionPromptResponse>()
+                val name = extension.metaData.name ?: "এক্সটেনশন"
+                showPopup(
+                    "$name ইনস্টল করবেন?", "এটি ওয়েবসাইটের ডেটা পড়তে ও বদলাতে পারবে",
+                    listOf(
+                        MenuItem("✓  ইনস্টল করুন") { res.complete(WebExtension.PermissionPromptResponse(true, true)) },
+                        MenuItem("✕  বাতিল") { res.complete(WebExtension.PermissionPromptResponse(false, false)) }
+                    ),
+                    false
+                ) { res.complete(WebExtension.PermissionPromptResponse(false, false)) }
+                return res
+            }
+        }
+    }
+
+    private fun installExtension(name: String, url: String, after: () -> Unit) {
+        toast("$name ইনস্টল হচ্ছে…")
+        runtime!!.webExtensionController.install(url, "manager").then<Void>({ _ ->
+            toast("✓ $name ইনস্টল হয়েছে")
+            after()
+            null
+        }, { _ ->
+            toast("ইনস্টল হয়নি")
+            null
+        })
+    }
+
+    private fun showExtensions() {
+        val page = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.argb(0xF2, 5, 3, 4))
+            isClickable = true
+            setPadding(dp(12), dp(8), dp(12), 0)
+        }
+        val list = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            clipChildren = false
+        }
+        val installed = mutableMapOf<String, WebExtension>()
+
+        fun render() {
+            list.removeAllViews()
+            list.addView(TextView(this).apply {
+                text = "এক্সটেনশন সরাসরি Mozilla-র অফিশিয়াল স্টোর থেকে নামে। ইনস্টলের পর পেজ রিলোড করুন।"
+                textSize = 12f
+                setTextColor(Color.argb(170, 255, 255, 255))
+                setPadding(dp(4), dp(6), dp(4), dp(2))
+            })
+            curatedExtensions.forEach { info ->
+                val ext = installed[info.id]
+                val card = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    background = glass(18, alpha = 0x26)
+                    lift(this, 6)
+                    setPadding(dp(12), dp(12), dp(12), dp(12))
+                }
+                card.addView(TextView(this).apply {
+                    text = info.icon; textSize = 20f; gravity = Gravity.CENTER
+                    background = glass(21, RED, 0x44, 0x99)
+                    lift(this, 5)
+                }, LinearLayout.LayoutParams(dp(42), dp(42)))
+                val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+                col.addView(TextView(this).apply {
+                    text = info.name; textSize = 14f; typeface = Typeface.DEFAULT_BOLD; setTextColor(Color.WHITE)
+                })
+                col.addView(TextView(this).apply {
+                    text = if (ext != null) "✓ ইনস্টল আছে • ${info.desc}" else info.desc
+                    textSize = 11.5f
+                    setTextColor(Color.argb(175, 255, 255, 255))
+                })
+                card.addView(col, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(12); marginEnd = dp(8) })
+                card.addView(TextView(this).apply {
+                    text = if (ext != null) "সরান" else "ইনস্টল"
+                    textSize = 12f
+                    typeface = Typeface.DEFAULT_BOLD
+                    setTextColor(Color.WHITE)
+                    setPadding(dp(14), dp(8), dp(14), dp(8))
+                    background = if (ext != null) glass(14, alpha = 0x30) else glass(14, RED, 0x66, 0xCC)
+                    pressable(this)
+                    setOnClickListener {
+                        if (ext != null) {
+                            runtime!!.webExtensionController.uninstall(ext).then<Void>({ _ ->
+                                toast("সরানো হয়েছে"); installed.remove(info.id); render(); null
+                            }, { _ -> toast("সরানো যায়নি"); null })
+                        } else {
+                            installExtension(info.name, info.url) {
+                                runtime!!.webExtensionController.list().then<Void>({ exts ->
+                                    installed.clear()
+                                    exts?.forEach { installed[it.id] = it }
+                                    render()
+                                    null
+                                }, { _ -> null })
+                            }
+                        }
+                    }
+                })
+                list.addView(card, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
+            }
+        }
+
+        val top = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            clipChildren = false
+            addView(glassButton("←") { dismissOverlay() }, LinearLayout.LayoutParams(dp(42), dp(42)))
+            addView(TextView(this@MainActivity).apply {
+                text = "🧩 এক্সটেনশন"; textSize = 18f; typeface = Typeface.DEFAULT_BOLD
+                setTextColor(Color.WHITE)
+                setShadowLayer(dpf(6), 0f, dpf(2), Color.argb(190, 255, 41, 69))
+            }, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(14) })
+        }
+        page.addView(top, LinearLayout.LayoutParams(-1, -2))
+        page.addView(ScrollView(this).apply { addView(list) }, LinearLayout.LayoutParams(-1, 0, 1f))
+        render()
+        addOverlay(page)
+
+        // ইনস্টল করা এক্সটেনশনগুলোর তালিকা আনা
+        runtime!!.webExtensionController.list().then<Void>({ exts ->
+            installed.clear()
+            exts?.forEach { installed[it.id] = it }
+            render()
+            null
+        }, { _ -> null })
+    }
+
     // ================= পারমিশন, ফাইল বাছাই, ফুলস্ক্রিন =================
 
     private fun askPermission(what: String, site: String, onAnswer: (Boolean) -> Unit) {
@@ -2143,6 +2295,7 @@ class MainActivity : Activity() {
             MenuItem("🕘  হিস্টরি") { showLibrary(true) },
             MenuItem("🔎  পেজে খুঁজুন", real) { openFind() },
             MenuItem("⬇  ডাউনলোড ম্যানেজার") { showDownloads() },
+            MenuItem("🧩  এক্সটেনশন") { showExtensions() },
             MenuItem(if (adblock) "🛡  বিজ্ঞাপন ব্লক: চালু" else "🛡  বিজ্ঞাপন ব্লক: বন্ধ") { toggleAdblock() },
             MenuItem("⇪  শেয়ার", real) { shareText(t.url) },
             MenuItem("⧉  লিংক কপি", real) { copyText(t.url) },
@@ -2182,15 +2335,4 @@ class MainActivity : Activity() {
             })
             items.add(MenuItem("🕶  ইনকগনিটো ট্যাবে খুলুন") { newTab(true, link, 0, false); opened() })
         }
-        if (media != null) {
-            val label = when (kind) { "image" -> "ছবি"; "video" -> "ভিডিও"; else -> "অডিও" }
-            items.add(MenuItem("⬇  $label ডাউনলোড") { downloadUrl(media, kind, tab.url) })
-            if (kind == "image") items.add(MenuItem("🖼  ছবি নতুন ট্যাবে খুলুন") { newTab(tab.priv, media, 0, false); opened() })
-        }
-        if (link != null) items.add(MenuItem("⬇  লিংক ডাউনলোড") { downloadUrl(link, "", tab.url) })
-        items.add(MenuItem("⧉  ঠিকানা কপি") { copyText(main) })
-        items.add(MenuItem("⇪  শেয়ার") { shareText(main) })
-
-        showPopup(Uri.parse(main).host ?: "লিংক", display(main), items, false)
-    }
-}
+        if (med
