@@ -412,6 +412,12 @@
     if (t) { e.preventDefault(); go(t.getAttribute('data-go')); }
   });
 
+  // 🎤 ভয়েস সার্চ: নেটিভ স্পিচ রিকগনিশন খোলে
+  document.addEventListener('click', function (e) {
+    var v = e.target.closest ? e.target.closest('#voiceBtn') : null;
+    if (v) { e.stopImmediatePropagation(); e.preventDefault(); go('mangal://voice'); }
+  }, true);
+
   // নিচের নেভ: ট্যাব, বুকমার্ক ও ডাউনলোড এখন নেটিভ স্ক্রিন খোলে (পুরোনো app.js-এর আগে ধরে)
   var MAP = { tabs: 'mangal://tabs', bookmarks: 'mangal://bookmarks', downloads: 'mangal://downloads' };
   document.addEventListener('click', function (e) {
