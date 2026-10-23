@@ -1,0 +1,10 @@
+{
+  "manifest_version": 2,
+  "name": "Mangal Hello",
+  "version": "1.0",
+  "description": "মঙ্গল ব্রাউজারের জন্য আমার প্রথম এক্সটেনশন",
+  "browser_specific_settings": { "gecko": { "id": "hello@mangal.browser" } },
+  "content_scripts": [
+    { "matches": ["*://*.wikipedia.org/*"], "js": ["hello.js"] }
+  ]
+}
