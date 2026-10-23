@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.ContentValues
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color
@@ -38,6 +39,9 @@ import android.widget.Toast
 import android.app.DownloadManager
 import android.content.pm.PackageManager
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
+import android.provider.MediaStore
 import android.view.WindowInsetsController
 import android.webkit.URLUtil
 import org.json.JSONArray
@@ -1377,7 +1381,7 @@ class MainActivity : Activity() {
             home,
             navItem("▢", "ট্যাব") { captureThumb { }; showTabSwitcher() },
             navItem("★", "বুকমার্ক") { showLibrary(false) },
-            navItem("⬇", "ডাউনলোড") { openDownloads() },
+            navItem("⬇", "ডাউনলোড") { showDownloads() },
             navItem("⚙", "সেটিংস") { showSettings() }
         )
         bottomNav = LinearLayout(this).apply {
@@ -1473,31 +1477,430 @@ class MainActivity : Activity() {
             "history" -> showLibrary(true)
             "incognito" -> captureThumb { newTab(priv = true) }
             "newtab" -> captureThumb { newTab() }
-            "downloads" -> try {
-                startActivity(Intent(DownloadManager.ACTION_VIEW_DOWNLOADS))
-            } catch (e: Exception) {
-                toast("ডাউনলোড তালিকা খোলা যায়নি")
-            }
+            "downloads" -> showDownloads()
         }
     }
 
-    // ================= ডাউনলোড =================
+    // ================= ডাউনলোড (IDM-স্টাইল ম্যানেজার) =================
 
-    private fun startDownload(r: WebResponse) {
+    private class DlItem(
+        val id: Long, val title: String, val status: Int,
+        val done: Long, val total: Long, val mime: String?, val uri: String?
+    )
+
+    private class DlHolder(
+        val card: View, val icon: TextView, val name: TextView, val fill: View,
+        val info: TextView, val chip: TextView, val actions: LinearLayout
+    ) {
+        var lastBytes = 0L
+        var lastTime = 0L
+        var speed = 0.0
+        var lastStatus = -1
+    }
+
+    private val dlHandler = Handler(Looper.getMainLooper())
+
+    private fun dm() = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+
+    private fun enqueueDownload(url: String, name: String, referer: String?) {
         try {
-            val url = r.uri
-            val cd = r.headers.entries.firstOrNull { it.key.equals("content-disposition", true) }?.value
-            val mime = r.headers.entries.firstOrNull { it.key.equals("content-type", true) }?.value?.substringBefore(';')
-            val name = URLUtil.guessFileName(url, cd, mime)
             val req = DownloadManager.Request(Uri.parse(url))
                 .setTitle(name)
                 .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                 .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name)
-            (getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(req)
+            if (referer != null && referer.startsWith("http")) req.addRequestHeader("Referer", referer)
+            dm().enqueue(req)
             toast("ডাউনলোড শুরু: $name")
         } catch (e: Exception) {
             toast("ডাউনলোড করা যায়নি")
         }
+    }
+
+    /** ছবি / ভিডিও / অডিও / লিংক ডাউনলোড (চেপে ধরা মেনু থেকে) */
+    private fun downloadUrl(url: String, kind: String, referer: String?) {
+        if (url.startsWith("data:")) { saveDataUri(url); return }
+        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            toast("এই লিংক ডাউনলোড করা যাবে না"); return
+        }
+        var name = URLUtil.guessFileName(url, null, null)
+        if (name.endsWith(".bin")) {
+            val ext = when (kind) { "image" -> ".jpg"; "video" -> ".mp4"; "audio" -> ".mp3"; else -> ".bin" }
+            name = "mangal_" + System.currentTimeMillis() + ext
+        }
+        enqueueDownload(url, name, referer)
+    }
+
+    /** data:image/...;base64,... ধরনের ছবি সরাসরি সেভ করে */
+    private fun saveDataUri(uri: String) {
+        try {
+            val comma = uri.indexOf(',')
+            val meta = uri.substring(5, comma)
+            val mime = meta.substringBefore(';')
+            val raw = uri.substring(comma + 1)
+            val bytes = if (meta.contains("base64")) android.util.Base64.decode(raw, android.util.Base64.DEFAULT)
+            else Uri.decode(raw).toByteArray()
+            val ext = android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(mime) ?: "bin"
+            val name = "mangal_" + System.currentTimeMillis() + "." + ext
+            if (Build.VERSION.SDK_INT >= 29) {
+                val cv = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, name)
+                    put(MediaStore.Downloads.MIME_TYPE, mime)
+                    put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                }
+                val u = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv)
+                    ?: throw IllegalStateException("insert failed")
+                contentResolver.openOutputStream(u)!!.use { it.write(bytes) }
+            } else {
+                java.io.File(getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), name).writeBytes(bytes)
+            }
+            toast("সেভ হয়েছে: $name")
+        } catch (e: Exception) {
+            toast("ছবি সেভ করা যায়নি")
+        }
+    }
+
+    /** পেজ নিজে যে ফাইল পাঠায় (PDF, APK, ZIP ইত্যাদি) */
+    private fun startDownload(r: WebResponse) {
+        val cd = r.headers.entries.firstOrNull { it.key.equals("content-disposition", true) }?.value
+        val mime = r.headers.entries.firstOrNull { it.key.equals("content-type", true) }?.value?.substringBefore(';')
+        val name = URLUtil.guessFileName(r.uri, cd, mime)
+        enqueueDownload(r.uri, name, tabs.getOrNull(current)?.url)
+    }
+
+    private fun queryDownloads(): List<DlItem> {
+        val out = mutableListOf<DlItem>()
+        try {
+            dm().query(DownloadManager.Query())?.use { c ->
+                while (c.moveToNext()) {
+                    out.add(
+                        DlItem(
+                            c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_ID)),
+                            c.getString(c.getColumnIndexOrThrow(DownloadManager.COLUMN_TITLE)) ?: "ফাইল",
+                            c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS)),
+                            c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)),
+                            c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)),
+                            c.getString(c.getColumnIndexOrThrow(DownloadManager.COLUMN_MEDIA_TYPE)),
+                            c.getString(c.getColumnIndexOrThrow(DownloadManager.COLUMN_URI))
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) { }
+        return out.sortedByDescending { it.id }
+    }
+
+    private fun openDownloaded(item: DlItem) {
+        try {
+            val u = dm().getUriForDownloadedFile(item.id)
+            startActivity(
+                Intent(Intent.ACTION_VIEW)
+                    .setDataAndType(u, item.mime ?: "*/*")
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        } catch (e: Exception) {
+            toast("এই ফাইল খোলার কোনো অ্যাপ পাওয়া যায়নি")
+        }
+    }
+
+    private fun retryDownload(item: DlItem) {
+        val u = item.uri ?: return
+        try {
+            val req = DownloadManager.Request(Uri.parse(u))
+                .setTitle(item.title)
+                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, item.title)
+            dm().remove(item.id)
+            dm().enqueue(req)
+        } catch (e: Exception) {
+            toast("আবার চেষ্টা করা যায়নি")
+        }
+    }
+
+    private fun showDownloads() {
+        val holders = mutableMapOf<Long, DlHolder>()
+        val page = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.argb(0xF2, 5, 3, 4))
+            isClickable = true
+            setPadding(dp(12), dp(8), dp(12), 0)
+        }
+        val summary = TextView(this).apply {
+            textSize = 13f
+            setTextColor(Color.WHITE)
+            background = glass(16, RED, 0x30, 0x77)
+            lift(this, 8)
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            setShadowLayer(dpf(6), 0f, dpf(2), Color.argb(190, 255, 41, 69))
+        }
+        val list = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            clipChildren = false
+        }
+        val empty = TextView(this).apply {
+            text = "কোনো ডাউনলোড নেই\nকোনো ছবি বা লিংক চেপে ধরে ডাউনলোড করুন"
+            gravity = Gravity.CENTER
+            setTextColor(Color.argb(160, 255, 255, 255))
+            setPadding(0, dp(60), 0, 0)
+            visibility = View.GONE
+        }
+
+        fun fmt(b: Long): String = android.text.format.Formatter.formatShortFileSize(this, maxOf(0L, b))
+
+        fun iconFor(it: DlItem): String {
+            val n = it.title.lowercase()
+            val m = it.mime ?: ""
+            return when {
+                m.startsWith("image") || n.endsWith(".jpg") || n.endsWith(".png") || n.endsWith(".webp") || n.endsWith(".gif") -> "🖼"
+                m.startsWith("video") || n.endsWith(".mp4") || n.endsWith(".mkv") || n.endsWith(".webm") -> "🎬"
+                m.startsWith("audio") || n.endsWith(".mp3") || n.endsWith(".m4a") -> "🎵"
+                n.endsWith(".apk") -> "📱"
+                n.endsWith(".zip") || n.endsWith(".rar") || n.endsWith(".7z") -> "📦"
+                n.endsWith(".pdf") || n.endsWith(".doc") || n.endsWith(".docx") || n.endsWith(".txt") -> "📄"
+                else -> "📁"
+            }
+        }
+
+        fun mini(label: String, f: () -> Unit) = TextView(this).apply {
+            text = label
+            textSize = 12f
+            setTextColor(Color.WHITE)
+            setPadding(dp(14), dp(7), dp(14), dp(7))
+            background = glass(14, alpha = 0x30)
+            setOnClickListener { f() }
+            pressable(this)
+        }
+
+        fun deleteBtn(item: DlItem): TextView {
+            val b = mini("🗑 মুছুন") { }
+            var armed = false
+            b.setOnClickListener {
+                if (!armed) {
+                    armed = true
+                    b.text = "নিশ্চিত? ফাইলও মুছবে"
+                    b.background = glass(14, RED, 0x66, 0xCC)
+                    b.postDelayed({
+                        armed = false
+                        b.text = "🗑 মুছুন"
+                        b.background = glass(14, alpha = 0x30)
+                    }, 2500)
+                } else {
+                    dm().remove(item.id)
+                }
+            }
+            return b
+        }
+
+        fun rebuildActions(h: DlHolder, item: DlItem) {
+            h.actions.removeAllViews()
+            val lp = { LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(8) } }
+            when (item.status) {
+                DownloadManager.STATUS_SUCCESSFUL -> {
+                    h.actions.addView(mini("▶ খুলুন") { openDownloaded(item) }, lp())
+                    h.actions.addView(deleteBtn(item), lp())
+                }
+                DownloadManager.STATUS_FAILED -> {
+                    h.actions.addView(mini("↻ আবার") { retryDownload(item) }, lp())
+                    h.actions.addView(deleteBtn(item), lp())
+                }
+                else -> h.actions.addView(mini("✕ বাতিল") { dm().remove(item.id) }, lp())
+            }
+        }
+
+        fun makeCard(item: DlItem): DlHolder {
+            val card = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                background = glass(18, alpha = 0x26)
+                lift(this, 7)
+                setPadding(dp(12), dp(12), dp(12), dp(10))
+            }
+            val icon = TextView(this).apply {
+                textSize = 20f
+                gravity = Gravity.CENTER
+                background = glass(21, RED, 0x44, 0x99)
+                lift(this, 5)
+            }
+            val name = TextView(this).apply {
+                textSize = 14f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(Color.WHITE)
+                maxLines = 1
+                ellipsize = TextUtils.TruncateAt.END
+            }
+            val info = TextView(this).apply {
+                textSize = 11.5f
+                setTextColor(Color.argb(175, 255, 255, 255))
+                maxLines = 1
+                ellipsize = TextUtils.TruncateAt.END
+            }
+            val chip = TextView(this).apply {
+                textSize = 11f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(Color.WHITE)
+                setPadding(dp(10), dp(4), dp(10), dp(4))
+            }
+            val col = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(name)
+                addView(info)
+            }
+            val head = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                addView(icon, LinearLayout.LayoutParams(dp(42), dp(42)))
+                addView(col, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(12); marginEnd = dp(8) })
+                addView(chip)
+            }
+            card.addView(head)
+
+            // 3D চকচকে প্রগ্রেস বার
+            val fill = FrameLayout(this).apply {
+                background = GradientDrawable(
+                    GradientDrawable.Orientation.LEFT_RIGHT,
+                    intArrayOf(Color.rgb(255, 41, 69), Color.rgb(255, 150, 60))
+                ).apply { cornerRadius = dpf(7) }
+                pivotX = 0f
+                scaleX = 0f
+                addView(View(this@MainActivity).apply {
+                    background = GradientDrawable(
+                        GradientDrawable.Orientation.TOP_BOTTOM,
+                        intArrayOf(Color.argb(0x80, 255, 255, 255), Color.TRANSPARENT)
+                    ).apply { cornerRadius = dpf(5) }
+                }, FrameLayout.LayoutParams(-1, dp(6)).apply { topMargin = dp(1) })
+            }
+            val track = FrameLayout(this).apply {
+                background = GradientDrawable().apply {
+                    setColor(Color.argb(0x99, 0, 0, 0))
+                    setStroke(dp(1), Color.argb(0x33, 255, 255, 255))
+                    cornerRadius = dpf(7)
+                }
+                clipToOutline = true
+                addView(fill, FrameLayout.LayoutParams(-1, -1))
+            }
+            card.addView(track, LinearLayout.LayoutParams(-1, dp(14)).apply { topMargin = dp(12) })
+
+            val actions = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.END
+            }
+            card.addView(actions, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
+
+            // 3D ঢোকার অ্যানিমেশন
+            card.cameraDistance = resources.displayMetrics.density * 9000f
+            card.alpha = 0f
+            card.rotationX = -20f
+            card.translationY = dpf(24)
+            card.animate().alpha(1f).rotationX(0f).translationY(0f).setDuration(260).start()
+            return DlHolder(card, icon, name, fill, info, chip, actions)
+        }
+
+        fun refresh() {
+            val items = queryDownloads()
+            val ids = items.map { it.id }.toSet()
+            holders.keys.filter { it !in ids }.forEach { id ->
+                holders.remove(id)?.let { list.removeView(it.card) }
+            }
+            items.reversed().forEach { item ->
+                if (!holders.containsKey(item.id)) {
+                    val h = makeCard(item)
+                    holders[item.id] = h
+                    list.addView(h.card, 0, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
+                }
+            }
+            empty.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
+
+            var totalSpeed = 0.0
+            var running = 0
+            val now = System.currentTimeMillis()
+            items.forEach { item ->
+                val h = holders[item.id] ?: return@forEach
+                if (item.status == DownloadManager.STATUS_RUNNING) {
+                    running++
+                    if (h.lastTime > 0 && item.done >= h.lastBytes) {
+                        val inst = (item.done - h.lastBytes) * 1000.0 / maxOf(1L, now - h.lastTime)
+                        h.speed = if (h.speed == 0.0) inst else h.speed * 0.6 + inst * 0.4
+                    }
+                } else {
+                    h.speed = 0.0
+                }
+                h.lastBytes = item.done
+                h.lastTime = now
+                totalSpeed += h.speed
+
+                val frac = if (item.status == DownloadManager.STATUS_SUCCESSFUL) 1f
+                else if (item.total > 0) (item.done.toFloat() / item.total).coerceIn(0f, 1f) else 0f
+                h.fill.animate().scaleX(frac).setDuration(400).start()
+
+                h.icon.text = iconFor(item)
+                h.name.text = item.title
+                val pct = (frac * 100).toInt()
+                when (item.status) {
+                    DownloadManager.STATUS_SUCCESSFUL -> {
+                        h.info.text = "${fmt(if (item.total > 0) item.total else item.done)} • সম্পন্ন"
+                        h.chip.text = "✓ সম্পন্ন"
+                        h.chip.background = glass(12, Color.rgb(60, 255, 140), 0x55, 0x99)
+                    }
+                    DownloadManager.STATUS_FAILED -> {
+                        h.info.text = "ব্যর্থ হয়েছে • আবার চেষ্টা করুন"
+                        h.chip.text = "✕ ব্যর্থ"
+                        h.chip.background = glass(12, RED, 0x66, 0xCC)
+                    }
+                    DownloadManager.STATUS_PAUSED -> {
+                        h.info.text = "${fmt(item.done)} • নেটওয়ার্কের অপেক্ষায়"
+                        h.chip.text = "⏸ অপেক্ষা"
+                        h.chip.background = glass(12, alpha = 0x40)
+                    }
+                    DownloadManager.STATUS_PENDING -> {
+                        h.info.text = "শুরু হচ্ছে…"
+                        h.chip.text = "⏳ সারিতে"
+                        h.chip.background = glass(12, alpha = 0x40)
+                    }
+                    else -> {
+                        val rem = if (item.total > 0) item.total - item.done else 0L
+                        val eta = if (h.speed >= 1 && rem > 0) {
+                            val sec = (rem / h.speed).toLong()
+                            String.format("%d:%02d", sec / 60, sec % 60)
+                        } else "--"
+                        val totalTxt = if (item.total > 0) fmt(item.total) else "?"
+                        h.info.text = "${fmt(item.done)} / $totalTxt • ${fmt(h.speed.toLong())}/s • ETA $eta"
+                        h.chip.text = if (item.total > 0) "⬇ ${bn(pct)}%" else "⬇ চলছে"
+                        h.chip.background = glass(12, RED, 0x55, 0xAA)
+                    }
+                }
+                if (h.lastStatus != item.status) {
+                    h.lastStatus = item.status
+                    rebuildActions(h, item)
+                }
+            }
+            summary.text = "⚡ ${fmt(totalSpeed.toLong())}/s   •   চলছে ${bn(running)}টি   •   মোট ${bn(items.size)}টি"
+        }
+
+        val top = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            clipChildren = false
+            addView(glassButton("←") { dismissOverlay() }, LinearLayout.LayoutParams(dp(42), dp(42)))
+            addView(TextView(this@MainActivity).apply {
+                text = "⬇ ডাউনলোড ম্যানেজার"; textSize = 17f; typeface = Typeface.DEFAULT_BOLD
+                setTextColor(Color.WHITE)
+                setShadowLayer(dpf(6), 0f, dpf(2), Color.argb(190, 255, 41, 69))
+            }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(14) })
+            addView(glassButton("📂") { openDownloads() }, LinearLayout.LayoutParams(dp(42), dp(42)))
+        }
+        page.addView(top, LinearLayout.LayoutParams(-1, -2))
+        page.addView(summary, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
+        page.addView(empty, LinearLayout.LayoutParams(-1, -2))
+        page.addView(ScrollView(this).apply { addView(list) }, LinearLayout.LayoutParams(-1, 0, 1f))
+
+        val tick = object : Runnable {
+            override fun run() {
+                if (overlay !== page) return
+                refresh()
+                dlHandler.postDelayed(this, 500)
+            }
+        }
+        refresh()
+        addOverlay(page)
+        dlHandler.postDelayed(tick, 500)
     }
 
     // ================= পারমিশন, ফাইল বাছাই, ফুলস্ক্রিন =================
@@ -1739,6 +2142,7 @@ class MainActivity : Activity() {
             MenuItem("▤  বুকমার্ক তালিকা") { showLibrary(false) },
             MenuItem("🕘  হিস্টরি") { showLibrary(true) },
             MenuItem("🔎  পেজে খুঁজুন", real) { openFind() },
+            MenuItem("⬇  ডাউনলোড ম্যানেজার") { showDownloads() },
             MenuItem(if (adblock) "🛡  বিজ্ঞাপন ব্লক: চালু" else "🛡  বিজ্ঞাপন ব্লক: বন্ধ") { toggleAdblock() },
             MenuItem("⇪  শেয়ার", real) { shareText(t.url) },
             MenuItem("⧉  লিংক কপি", real) { copyText(t.url) },
@@ -1757,22 +2161,36 @@ class MainActivity : Activity() {
     }
 
     private fun showLinkMenu(tab: Tab, el: GeckoSession.ContentDelegate.ContextElement) {
-        val link = el.linkUri ?: el.srcUri ?: return
-        val toast = { Toast.makeText(this, "ট্যাব খোলা হয়েছে", Toast.LENGTH_SHORT).show() }
-        showPopup(
-            Uri.parse(link).host ?: "লিংক", display(link),
-            listOf(
-                MenuItem("＋  নতুন ট্যাবে খুলুন") { newTab(tab.priv, link, 0, false); toast() },
-                MenuItem("▦  নতুন ট্যাব গ্রুপে খুলুন") {
-                    if (tab.group == 0) tab.group = nextGroup++
-                    newTab(tab.priv, link, tab.group, false)
-                    toast()
-                },
-                MenuItem("🕶  ইনকগনিটো ট্যাবে খুলুন") { newTab(true, link, 0, false); toast() },
-                MenuItem("⧉  লিংকের ঠিকানা কপি") { copyText(link) },
-                MenuItem("⇪  লিংক শেয়ার") { shareText(link) }
-            ),
-            false
-        )
+        val kind = when (el.type) {
+            GeckoSession.ContentDelegate.ContextElement.TYPE_IMAGE -> "image"
+            GeckoSession.ContentDelegate.ContextElement.TYPE_VIDEO -> "video"
+            GeckoSession.ContentDelegate.ContextElement.TYPE_AUDIO -> "audio"
+            else -> ""
+        }
+        val media = if (kind.isNotEmpty()) el.srcUri else null
+        val link = el.linkUri
+        val main = link ?: media ?: return
+        val opened = { Toast.makeText(this, "ট্যাব খোলা হয়েছে", Toast.LENGTH_SHORT).show() }
+
+        val items = mutableListOf<MenuItem>()
+        if (link != null) {
+            items.add(MenuItem("＋  নতুন ট্যাবে খুলুন") { newTab(tab.priv, link, 0, false); opened() })
+            items.add(MenuItem("▦  নতুন ট্যাব গ্রুপে খুলুন") {
+                if (tab.group == 0) tab.group = nextGroup++
+                newTab(tab.priv, link, tab.group, false)
+                opened()
+            })
+            items.add(MenuItem("🕶  ইনকগনিটো ট্যাবে খুলুন") { newTab(true, link, 0, false); opened() })
+        }
+        if (media != null) {
+            val label = when (kind) { "image" -> "ছবি"; "video" -> "ভিডিও"; else -> "অডিও" }
+            items.add(MenuItem("⬇  $label ডাউনলোড") { downloadUrl(media, kind, tab.url) })
+            if (kind == "image") items.add(MenuItem("🖼  ছবি নতুন ট্যাবে খুলুন") { newTab(tab.priv, media, 0, false); opened() })
+        }
+        if (link != null) items.add(MenuItem("⬇  লিংক ডাউনলোড") { downloadUrl(link, "", tab.url) })
+        items.add(MenuItem("⧉  ঠিকানা কপি") { copyText(main) })
+        items.add(MenuItem("⇪  শেয়ার") { shareText(main) })
+
+        showPopup(Uri.parse(main).host ?: "লিংক", display(main), items, false)
     }
 }
