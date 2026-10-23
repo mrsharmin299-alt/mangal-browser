@@ -108,10 +108,22 @@ jobs:
           attrs = ''
           if 'configChanges' not in s:
               attrs += ' android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout|uiMode"'
+          if 'launchMode' not in s:
+              attrs += ' android:launchMode="singleTask"'
+          if 'supportsPictureInPicture' not in s:
+              attrs += ' android:supportsPictureInPicture="true"'
           if 'windowSoftInputMode' not in s:
               attrs += ' android:windowSoftInputMode="adjustResize"'
           if attrs:
               s = s.replace('<activity', '<activity' + attrs, 1)
+          if 'android:scheme="https"' not in s:
+              filt = ('<intent-filter>'
+                      '<action android:name="android.intent.action.VIEW"/>'
+                      '<category android:name="android.intent.category.DEFAULT"/>'
+                      '<category android:name="android.intent.category.BROWSABLE"/>'
+                      '<data android:scheme="http"/><data android:scheme="https"/>'
+                      '</intent-filter>')
+              s = s.replace('</activity>', filt + '</activity>', 1)
           if 'usesCleartextTraffic' not in s:
               s = s.replace('<application', '<application android:usesCleartextTraffic="true"', 1)
           open(p, 'w', encoding='utf-8').write(s)
